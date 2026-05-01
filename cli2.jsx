@@ -355,6 +355,22 @@ const App = ({ config: initCfg }) => {
     const msgRef = useRef([]);
     const [agent, setAgent] = useState(null);
 
+    // Nuevos estados para atajos
+    const [isVerbose, setIsVerbose]       = useState(false);
+    const [showTasks, setShowTasks]       = useState(false);
+    const abortCtrlRef                    = useRef(null);
+
+    // Hooks de layout movidos arriba para evitar errores de React
+    const { stdout } = useStdout();
+    const [rows, setRows] = useState(stdout?.rows || 24);
+
+    useEffect(() => {
+        if (!stdout) return;
+        const resizeHandler = () => setRows(stdout.rows);
+        stdout.on('resize', resizeHandler);
+        return () => stdout.off('resize', resizeHandler);
+    }, [stdout]);
+
     // Inicializar el agente cuando entramos a main y guardamos config
     useEffect(() => {
         if (screen === 'main') {
@@ -467,11 +483,19 @@ const App = ({ config: initCfg }) => {
             if (str === '!' && input === '') { setInput('! '); return; }
             if (str === '@' && input === '') { setInput('@ '); return; }
             if (key.ctrl && str === 'o') {
-                setHistory(prev => [...prev, { type: 'assistant', text: 'ℹ️ Verbose output toggled (placeholder)' }]);
+                setIsVerbose(p => {
+                    const next = !p;
+                    setHistory(prev => [...prev, { type: 'assistant', text: `ℹ️ Verbose mode is now ${next ? 'ON' : 'OFF'}` }]);
+                    return next;
+                });
                 return;
             }
             if (key.ctrl && str === 't') {
-                setHistory(prev => [...prev, { type: 'assistant', text: 'ℹ️ Tasks toggled (placeholder)' }]);
+                setShowTasks(p => {
+                    const next = !p;
+                    setHistory(prev => [...prev, { type: 'assistant', text: `ℹ️ Tasks mode is now ${next ? 'ON' : 'OFF'}` }]);
+                    return next;
+                });
                 return;
             }
         }
@@ -511,6 +535,16 @@ const App = ({ config: initCfg }) => {
         }
 
         if (status !== 'idle') {
+            if (key.ctrl && str === 'z') {
+                if (abortCtrlRef.current) {
+                    abortCtrlRef.current.abort();
+                }
+                setStatus('idle');
+                setActiveTool(null);
+                setThinkStart(null);
+                setHistory(prev => [...prev, { type: 'assistant', text: '🛑 Ejecución cancelada por el usuario.' }]);
+                return;
+            }
             if (key.escape) { /* abort TODO */ }
             return;
         }
@@ -532,6 +566,15 @@ const App = ({ config: initCfg }) => {
             }
             if (trimmed === '/clear') {
                 setHistory([]); msgRef.current = []; saveSession([]); setInput(''); return;
+            }
+            if (trimmed === '/help') {
+                const helpText = SLASH_COMMANDS.map(c => `  ${c.cmd.padEnd(12)} - ${c.desc.join(' ')}`).join('\n');
+                setHistory(prev => [...prev, { type: 'assistant', text: `Comandos disponibles:\n${helpText}` }]);
+                setInput(''); return;
+            }
+            if (trimmed.startsWith('/btw')) {
+                setHistory(prev => [...prev, { type: 'assistant', text: '📝 Modo nota / side question activo...' }]);
+                setInput(''); return;
             }
             if (trimmed === '/import') {
                 const s = loadSession();
@@ -578,10 +621,12 @@ const App = ({ config: initCfg }) => {
 
         msgRef.current = [...msgRef.current, new HumanMessage(msg)];
 
+        abortCtrlRef.current = new AbortController();
+
         try {
             const stream = await agent.stream(
                 { messages: msgRef.current },
-                { recursionLimit: 30 }
+                { recursionLimit: 30, signal: abortCtrlRef.current.signal }
             );
             const allChunks = [];
             let pendingTC = null;
@@ -681,15 +726,7 @@ const App = ({ config: initCfg }) => {
     const tokenStr   = totalTokens > 0 ? ` · ↓ ${totalTokens} tokens` : '';
     const CONFIRM_OPTS = ['Yes', "Yes, allow all for this session", 'No'];
 
-    const { stdout } = useStdout();
-    const [rows, setRows] = useState(stdout?.rows || 24);
 
-    useEffect(() => {
-        if (!stdout) return;
-        const resizeHandler = () => setRows(stdout.rows);
-        stdout.on('resize', resizeHandler);
-        return () => stdout.off('resize', resizeHandler);
-    }, [stdout]);
 
     // Calcular cuánto espacio ocupa el banner + header + footer
     // Aprox 12 líneas. Depende de si hay un comando slash abierto, confirmaciones, etc.
