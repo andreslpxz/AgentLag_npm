@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import React, { useState, useCallback, useRef, useEffect } from 'react';
-import { render, Text, Box, useInput, Static, Newline } from 'ink';
+import { render, Text, Box, useInput, Static, Newline, useStdout } from 'ink';
 import { buildAgent } from './agent.js';
 import { HumanMessage, AIMessage } from '@langchain/core/messages';
 import fs from 'fs';
@@ -310,15 +310,27 @@ const App = ({ config: initCfg }) => {
 
     // Determinar pantalla inicial según config guardada
     const initScreen = () => {
-        const isTrusted = (initCfg.trustedDirs || []).includes(process.cwd()) || initCfg.trusted;
+        // Validamos explícitamente cada paso para que si falta algo, caiga ahí.
         if (!initCfg.colorSet) return 'color';
-        if (!isTrusted) return 'trust';
+
+        // Si hay una configuración de provider y model validas:
+        if (initCfg.provider && initCfg.model) {
+            // Siempre pasa por 'trust' si no confió antes en este dir
+            const trustedDirs = initCfg.trustedDirs || [];
+            if (trustedDirs.includes(process.cwd()) || initCfg.trusted === true) {
+                return 'main';
+            }
+            return 'trust';
+        }
+
+        // Si no está configurado provider/model, sigue el flujo
+        if (!initCfg.trustedDirs?.includes(process.cwd()) && initCfg.trusted !== true) return 'trust';
         if (!initCfg.provider) return 'provider';
         if (!initCfg.model) return 'model';
         return 'main';
     };
 
-    const [screen, setScreen]             = useState(initScreen);
+    const [screen, setScreen]             = useState(initScreen());
     const [menuIndex, setMenuIndex]       = useState(0);
     const [formInput, setFormInput]       = useState('');
     const [selProvider, setSelProvider]   = useState(
@@ -395,7 +407,7 @@ const App = ({ config: initCfg }) => {
             if (key.return && menuIndex===0) {
                 const trustedDirs = cfg.current.trustedDirs || [];
                 if (!trustedDirs.includes(process.cwd())) trustedDirs.push(process.cwd());
-                cfg.current = { ...cfg.current, trustedDirs };
+                cfg.current = { ...cfg.current, trustedDirs, trusted: true };
                 saveConfig(cfg.current);
                 setMenuIndex(0);
 
@@ -450,6 +462,43 @@ const App = ({ config: initCfg }) => {
         }
 
         // ── main ──────────────────────────────────────────────────────────────
+
+        if (screen === 'main') {
+            if (str === '!' && input === '') { setInput('! '); return; }
+            if (str === '@' && input === '') { setInput('@ '); return; }
+            if (key.ctrl && str === 'o') {
+                setHistory(prev => [...prev, { type: 'assistant', text: 'ℹ️ Verbose output toggled (placeholder)' }]);
+                return;
+            }
+            if (key.ctrl && str === 't') {
+                setHistory(prev => [...prev, { type: 'assistant', text: 'ℹ️ Tasks toggled (placeholder)' }]);
+                return;
+            }
+        }
+
+
+        // Shortcuts en main
+        if (screen === 'main') {
+            // alt+p para cambiar modelo
+            if (key.meta && str === 'p') {
+                setFormInput('');
+                setMenuIndex(0);
+                setScreen('model');
+                return;
+            }
+            // doble esc para clear: podemos simularlo si key.escape pasa 2 veces rapido
+            // Pero como escape ya limpia el input, es mas simple limpiar input primero,
+            // y si ya esta vacio limpiar el historial.
+            if (key.escape) {
+                if (input === '') {
+                    setHistory([]); msgRef.current = []; saveSession([]);
+                } else {
+                    setInput(''); setCmdIndex(0);
+                }
+                return;
+            }
+        }
+
         if (pendingConfirm) {
             if (key.upArrow)   setConfirmIdx(i=>Math.max(0,i-1));
             if (key.downArrow) setConfirmIdx(i=>Math.min(2,i+1));
@@ -474,6 +523,13 @@ const App = ({ config: initCfg }) => {
         if (key.return) {
             const trimmed = input.trim();
             if (!trimmed) return;
+            if (trimmed === '/config') {
+                // Reset setup
+                cfg.current = {};
+                saveConfig({});
+                setScreen('color');
+                return;
+            }
             if (trimmed === '/clear') {
                 setHistory([]); msgRef.current = []; saveSession([]); setInput(''); return;
             }
@@ -500,7 +556,7 @@ const App = ({ config: initCfg }) => {
             return;
         }
 
-        if (key.escape) { setInput(''); setCmdIndex(0); return; }
+        // key.escape handled above
         if (key.backspace||key.delete) { setInput(p=>p.slice(0,-1)); setCmdIndex(0); return; }
 
         // Paste y escritura normal: str puede llegar como string largo al pegar
@@ -625,18 +681,52 @@ const App = ({ config: initCfg }) => {
     const tokenStr   = totalTokens > 0 ? ` · ↓ ${totalTokens} tokens` : '';
     const CONFIRM_OPTS = ['Yes', "Yes, allow all for this session", 'No'];
 
-    return (
-        <Box flexDirection="column" paddingX={1} paddingY={0}>
+    const { stdout } = useStdout();
+    const [rows, setRows] = useState(stdout?.rows || 24);
 
-            {/* Welcome box – SIEMPRE visible */}
+    useEffect(() => {
+        if (!stdout) return;
+        const resizeHandler = () => setRows(stdout.rows);
+        stdout.on('resize', resizeHandler);
+        return () => stdout.off('resize', resizeHandler);
+    }, [stdout]);
+
+    // Calcular cuánto espacio ocupa el banner + header + footer
+    // Aprox 12 líneas. Depende de si hay un comando slash abierto, confirmaciones, etc.
+    // Usaremos un Box contenedor de todo el alto de la terminal y overflow='hidden'
+    // cortando el array de history para que no desborde.
+
+    // Contamos cuantas lineas ocupa el historial y herramientas activas
+    const getLines = (msg) => {
+        if (msg.type === 'tool') return 3;
+        if (msg.text) return msg.text.split('\n').length + 2;
+        return 2;
+    };
+
+    let currentLines = 0;
+    const maxLines = Math.max(1, rows - 15); // reservamos ~15 lineas para banner, prompt y footer
+    const visibleHistory = [];
+
+    for (let i = history.length - 1; i >= 0; i--) {
+        const itemLines = getLines(history[i]);
+        if (currentLines + itemLines > maxLines && visibleHistory.length > 0) break;
+        currentLines += itemLines;
+        visibleHistory.unshift({ ...history[i], origIndex: i });
+    }
+
+    return (
+        <Box flexDirection="column" height={rows} overflow="hidden">
+
+            {/* Welcome box – SIEMPRE visible y anclado arriba */}
             <WelcomeBox
                 provider={selProvider?.label || cfg.current.provider || 'provider'}
                 model={selModel || cfg.current.model || 'model'}
             />
 
-            {/* Historial estático */}
-            <Static items={history}>
-                {(item, i) => {
+            {/* Contenedor del chat con espacio sobrante, flex-end empuja contenido hacia abajo */}
+            <Box flexDirection="column" justifyContent="flex-end" flexGrow={1} overflow="hidden">
+                {visibleHistory.map((item) => {
+                    const i = item.origIndex;
                     if (item.type==='user')      return <UserMessage      key={i} text={item.text} />;
                     if (item.type==='assistant') return <AssistantMessage key={i} text={item.text} />;
                     if (item.type==='tool')      return (
@@ -645,24 +735,24 @@ const App = ({ config: initCfg }) => {
                         </Box>
                     );
                     return null;
-                }}
-            </Static>
+                })}
 
-            {/* Herramienta activa */}
-            {activeTool && (
-                <Box marginTop={1}>
-                    <ToolLine name={activeTool.name} input={activeTool.input} running={true} />
-                </Box>
-            )}
+                {/* Herramienta activa */}
+                {activeTool && (
+                    <Box marginTop={1}>
+                        <ToolLine name={activeTool.name} input={activeTool.input} running={true} />
+                    </Box>
+                )}
 
-            {/* Spinner */}
-            {isWorking && !pendingConfirm && (
-                <Box marginTop={1}>
-                    <Text color="yellow">{spinner} </Text>
-                    <Text color="yellow">{thinkWord}…</Text>
-                    <Text color="gray">{timeStr}{tokenStr}</Text>
-                </Box>
-            )}
+                {/* Spinner */}
+                {isWorking && !pendingConfirm && (
+                    <Box marginTop={1}>
+                        <Text color="yellow">{spinner} </Text>
+                        <Text color="yellow">{thinkWord}…</Text>
+                        <Text color="gray">{timeStr}{tokenStr}</Text>
+                    </Box>
+                )}
+            </Box>
 
             {/* Confirmación */}
             {pendingConfirm && (
