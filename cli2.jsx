@@ -10,7 +10,7 @@ import os from 'os';
 // ─── Persistencia ~/.agentlag/ ────────────────────────────────────────────────
 const CONFIG_DIR  = path.join(os.homedir(), '.agentlag');
 const CONFIG_FILE = path.join(CONFIG_DIR, 'config.json');
-const SESSION_FILE= path.join(CONFIG_DIR, 'session.json');
+const SESSION_FILE = path.join(process.cwd(), '.agentlag_history.json');
 
 function ensureDir() {
     if (!fs.existsSync(CONFIG_DIR)) fs.mkdirSync(CONFIG_DIR, { recursive: true });
@@ -26,7 +26,6 @@ function loadSession() {
     try { return JSON.parse(fs.readFileSync(SESSION_FILE, 'utf8')); } catch { return { history: [] }; }
 }
 function saveSession(history) {
-    ensureDir();
     const toSave = history.filter(m => m.type === 'user' || m.type === 'assistant');
     fs.writeFileSync(SESSION_FILE, JSON.stringify({ history: toSave }, null, 2));
 }
@@ -273,6 +272,7 @@ const SLASH_COMMANDS = [
     { cmd:'/agents',   desc:['Manage agent configurations'] },
     { cmd:'/branch',   desc:['Create a branch of the current','conversation at this point'] },
     { cmd:'/clear',    desc:['Clear conversation history'] },
+    { cmd:'/import',   desc:['Import history from current project'] },
     { cmd:'/help',     desc:['Show all available commands'] },
 ];
 
@@ -306,15 +306,16 @@ const ShortcutsHelp = () => (
 );
 
 // ─── App ──────────────────────────────────────────────────────────────────────
-const App = ({ agent, config: initCfg }) => {
+const App = ({ config: initCfg }) => {
 
     // Determinar pantalla inicial según config guardada
     const initScreen = () => {
-        if (initCfg.colorSet && initCfg.trusted && initCfg.provider && initCfg.model) return 'main';
-        if (initCfg.colorSet && initCfg.trusted && initCfg.provider) return 'model';
-        if (initCfg.colorSet && initCfg.trusted) return 'provider';
-        if (initCfg.colorSet) return 'trust';
-        return 'color';
+        const isTrusted = (initCfg.trustedDirs || []).includes(process.cwd()) || initCfg.trusted;
+        if (!initCfg.colorSet) return 'color';
+        if (!isTrusted) return 'trust';
+        if (!initCfg.provider) return 'provider';
+        if (!initCfg.model) return 'model';
+        return 'main';
     };
 
     const [screen, setScreen]             = useState(initScreen);
@@ -338,18 +339,19 @@ const App = ({ agent, config: initCfg }) => {
     const [pendingConfirm, setPendingConfirm] = useState(null);
     const [confirmIdx, setConfirmIdx]     = useState(0);
     const [totalTokens, setTotalTokens]   = useState(0);
-    const [history, setHistory]           = useState(() => loadSession().history || []);
+    const [history, setHistory]           = useState([]);
     const msgRef = useRef([]);
+    const [agent, setAgent] = useState(null);
 
-    // Restaurar historial de mensajes LangChain
+    // Inicializar el agente cuando entramos a main y guardamos config
     useEffect(() => {
-        const s = loadSession();
-        if (s.history?.length) {
-            msgRef.current = s.history.map(m =>
-                m.type === 'user' ? new HumanMessage(m.text) : new AIMessage(m.text)
-            );
+        if (screen === 'main') {
+            buildAgent(cfg.current).then(a => setAgent(a)).catch(err => {
+                setHistory([{type:'assistant', text:'❌ Error al iniciar agente: '+err.message}]);
+            });
         }
-    }, []);
+    }, [screen]);
+
 
     // Timer
     useEffect(() => {
@@ -391,9 +393,18 @@ const App = ({ agent, config: initCfg }) => {
             if (key.downArrow) setMenuIndex(i => Math.min(1, i+1));
             if (key.escape || (key.return && menuIndex===1)) process.exit();
             if (key.return && menuIndex===0) {
-                cfg.current = { ...cfg.current, trusted:true };
+                const trustedDirs = cfg.current.trustedDirs || [];
+                if (!trustedDirs.includes(process.cwd())) trustedDirs.push(process.cwd());
+                cfg.current = { ...cfg.current, trustedDirs };
                 saveConfig(cfg.current);
-                setMenuIndex(0); setScreen('provider');
+                setMenuIndex(0);
+
+                // Si ya teníamos provider y model, saltamos directo a main
+                if (cfg.current.provider && cfg.current.model) {
+                    setScreen('main');
+                } else {
+                    setScreen('provider');
+                }
             }
             return;
         }
@@ -466,6 +477,19 @@ const App = ({ agent, config: initCfg }) => {
             if (trimmed === '/clear') {
                 setHistory([]); msgRef.current = []; saveSession([]); setInput(''); return;
             }
+            if (trimmed === '/import') {
+                const s = loadSession();
+                if (s.history?.length) {
+                    msgRef.current = s.history.map(m =>
+                        m.type === 'user' ? new HumanMessage(m.text) : new AIMessage(m.text)
+                    );
+                    setHistory(s.history);
+                    setHistory(prev => [...prev, { type:'assistant', text:'✅ Historial importado correctamente.' }]);
+                } else {
+                    setHistory(prev => [...prev, { type:'assistant', text:'⚠️ No hay historial previo para importar en este proyecto.' }]);
+                }
+                setInput(''); return;
+            }
             if (trimmed.startsWith('/')) {
                 const q = trimmed.slice(1).toLowerCase();
                 const m = SLASH_COMMANDS.filter(c=>c.cmd.includes(q))[cmdIndex];
@@ -488,6 +512,10 @@ const App = ({ agent, config: initCfg }) => {
 
     // ── Agente ────────────────────────────────────────────────────────────────
     const handleSend = useCallback(async (msg) => {
+        if (!agent) {
+            setHistory(prev => [...prev, { type:'assistant', text:'❌ El agente aún no está inicializado.' }]);
+            return;
+        }
         setHistory(prev => [...prev, { type:'user', text:msg }]);
         setThinkWord(randWord()); setThinkStart(Date.now()); setElapsed(0);
         setStatus('thinking'); setActiveTool(null);
@@ -678,6 +706,4 @@ const App = ({ agent, config: initCfg }) => {
 
 // ─── Entry point ──────────────────────────────────────────────────────────────
 const savedConfig = loadConfig();
-const agent = await buildAgent();
-
-render(<App agent={agent} config={savedConfig} />, { patchConsole: false });
+render(<App config={savedConfig} />, { patchConsole: false });
