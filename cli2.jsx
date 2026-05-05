@@ -397,11 +397,21 @@ const App = ({ config: initCfg }) => {
         return () => clearInterval(t);
     }, [status, thinkStart]);
 
-    // Inicializar agente
+    // Inicializar agente y mostrar banner como primer item estático
     useEffect(() => {
         if (screen === 'main' && !agent) {
+            setStaticHistory(prev => {
+                if (prev.length === 0 || prev[0].type !== 'welcome') {
+                    return [{
+                        type: 'welcome',
+                        provider: selProvider?.label || cfg.current.provider || 'provider',
+                        model: selModel || cfg.current.model || 'model',
+                    }, ...prev];
+                }
+                return prev;
+            });
             buildAgent().then(setAgent).catch(err => {
-                setStaticHistory([{type:'assistant', text:'❌ Error al iniciar agente: '+err.message}]);
+                setStaticHistory(prev => [...prev, {type:'assistant', text:'❌ Error al iniciar agente: '+err.message}]);
             });
         }
     }, [screen, agent]);
@@ -533,7 +543,8 @@ const App = ({ config: initCfg }) => {
             // y si ya esta vacio limpiar el historial.
             if (key.escape) {
                 if (input === '') {
-                    setStaticHistory([]); msgRef.current = []; saveSession([]);
+                    setStaticHistory(prev => prev.filter(i => i.type === 'welcome'));
+                    msgRef.current = []; saveSession([]);
                 } else {
                     setInput(''); setCmdIndex(0);
                 }
@@ -583,7 +594,8 @@ const App = ({ config: initCfg }) => {
                 return;
             }
             if (trimmed === '/clear') {
-                setStaticHistory([]); msgRef.current = []; saveSession([]); setInput(''); return;
+                setStaticHistory(prev => prev.filter(i => i.type === 'welcome'));
+                msgRef.current = []; saveSession([]); setInput(''); return;
             }
             if (trimmed === '/help') {
                 const helpText = SLASH_COMMANDS.map(c => `  ${c.cmd.padEnd(12)} - ${c.desc.join(' ')}`).join('\n');
@@ -819,14 +831,11 @@ const App = ({ config: initCfg }) => {
 
     return (
         <Box flexDirection="column">
-            {/* Solo mostramos el WelcomeBox al inicio, luego Static lo empujará arriba */}
-            <WelcomeBox
-                provider={selProvider?.label || cfg.current.provider || 'provider'}
-                model={selModel || cfg.current.model || 'model'}
-            />
-
             <Static items={staticHistory}>
                 {(item, index) => {
+                    if (item.type==='welcome')   return (
+                        <WelcomeBox key="welcome" provider={item.provider} model={item.model} />
+                    );
                     if (item.type==='user')      return <UserMessage      key={index} text={item.text} />;
                     if (item.type==='assistant') return <AssistantMessage key={index} text={item.text} />;
                     if (item.type==='tool')      return (
