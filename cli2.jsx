@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { render, Text, Box, useInput, Static, Newline, useStdout } from 'ink';
-import { buildAgent } from './agent.js';
-import { fetchOllamaModels, isOllamaRunning, fetchTogetherModels } from './ollama_utils.js';
+import { buildAgent, stripMarkdown } from './agent.js';
+import { fetchOllamaModels, isOllamaRunning } from './ollama_utils.js';
 import { HumanMessage, AIMessage } from '@langchain/core/messages';
 import { spawn } from 'child_process';
 import fs from 'fs';
@@ -52,7 +52,7 @@ const PROVIDERS = [
     { id:'mistral',    label:'Mistral AI',      desc:'Mixtral, Mistral-Large' },
     { id:'meta',       label:'Meta (Llama)',    desc:'Llama 3.x via API' },
     { id:'ollama',     label:'Ollama (local)',  desc:'Local models, no API key' },
-    { id:'together',   label:'Together AI',     desc:'Open models hosted' },
+    { id:'huggingface', label:'HuggingFace',     desc:'Download & run HF models via Ollama' },
 ];
 
 const PROVIDER_MODELS = {
@@ -65,7 +65,7 @@ const PROVIDER_MODELS = {
     mistral:    ['mistral-large-latest','mistral-medium','codestral-latest'],
     meta:       ['llama-3.3-70b','llama-3.1-405b'],
     ollama:     ['llama3','mistral','qwen2','gemma2','phi3','codellama'],
-    together:   ['meta-llama/Llama-3-70b-chat-hf','mistralai/Mixtral-8x7B-Instruct-v0.1'],
+    huggingface: [],
 };
 
 // ─── Componentes base ─────────────────────────────────────────────────────────
@@ -129,7 +129,8 @@ const UserMessage    = ({ text }) => (
     </Box>
 );
 const AssistantMessage = ({ text }) => {
-    const lines = (text || '').split('\n');
+    const cleaned = stripMarkdown(text || '');
+    const lines = cleaned.split('\n');
     return (
         <Box flexDirection="column" marginTop={1}>
             {lines.map((line, i) => (
@@ -220,50 +221,69 @@ const ProviderScreen = ({ menuIndex }) => (
     </Box>
 );
 
-const ApiKeyScreen = ({ provider, inputText, showError }) => (
-    <Box flexDirection="column" paddingX={1} paddingY={1}>
-        <AgentLogo /><Newline />
-        <Text color="gray">{'─'.repeat(69)}</Text>
-        <Text bold> Enter API Key for <Text color="#00FF87">{provider?.label}</Text></Text><Newline />
-        <Text color="gray"> {provider?.id==='ollama' ? 'No key needed for local Ollama' : 'Your key is stored locally in ~/.agentlag/config.json'}</Text>
-        <Newline />
-        <Box borderStyle="single" borderColor={showError ? 'red' : 'cyan'} paddingX={1}>
-            <Text color="gray">Key: </Text>
-            <Text>{provider?.id==='ollama' ? 'Local' : '*'.repeat(inputText.length)}</Text>
-            <Text color="white">█</Text>
-        </Box>
-        {showError && <Text color="red"> ⚠ API key es requerida para {provider?.label}</Text>}
-        <Newline />
-        <Text color="gray"> Enter to confirm · Esc to go back</Text>
-        <Text color="gray">{'╌'.repeat(69)}</Text>
-    </Box>
-);
-
-const ModelScreen = ({ provider, menuIndex, inputText, ollamaModels, ollamaStatus, togetherModels, togetherStatus }) => {
-    const isOllama = provider?.id === 'ollama';
-    const isTogether = provider?.id === 'together';
-    let suggestions;
-    if (isOllama) {
-        suggestions = ollamaStatus === 'running' ? ollamaModels : [];
-    } else if (isTogether && togetherModels.length > 0) {
-        suggestions = inputText
-            ? togetherModels.filter(m => m.toLowerCase().includes(inputText.toLowerCase())).slice(0, 15)
-            : togetherModels.slice(0, 15);
-    } else {
-        suggestions = PROVIDER_MODELS[provider?.id] || [];
-    }
-    const listLabel = isOllama && ollamaStatus === 'running'
-        ? 'Modelos instalados'
-        : isTogether && togetherModels.length > 0
-            ? `Modelos disponibles (${togetherModels.length} total)`
-            : 'Suggestions';
+const ApiKeyScreen = ({ provider, inputText, showError }) => {
+    const noKey = provider?.id === 'ollama' || provider?.id === 'huggingface';
     return (
         <Box flexDirection="column" paddingX={1} paddingY={1}>
             <AgentLogo /><Newline />
             <Text color="gray">{'─'.repeat(69)}</Text>
-            <Text bold> Select or type model for <Text color="#00FF87">{provider?.label}</Text></Text><Newline />
-            {isTogether && (
-                <Text color="gray"> Pega cualquier nombre de modelo de HuggingFace (ej: inclusionai/ling-2.6-1t)</Text>
+            <Text bold> Enter API Key for <Text color="#00FF87">{provider?.label}</Text></Text><Newline />
+            <Text color="gray"> {noKey ? 'No necesita API key — se ejecuta localmente' : 'Your key is stored locally in ~/.agentlag/config.json'}</Text>
+            <Newline />
+            <Box borderStyle="single" borderColor={showError ? 'red' : 'cyan'} paddingX={1}>
+                <Text color="gray">Key: </Text>
+                <Text>{noKey ? 'Local' : '*'.repeat(inputText.length)}</Text>
+                <Text color="white">█</Text>
+            </Box>
+            {showError && <Text color="red"> ⚠ API key es requerida para {provider?.label}</Text>}
+            <Newline />
+            <Text color="gray"> Enter to confirm · Esc to go back</Text>
+            <Text color="gray">{'╌'.repeat(69)}</Text>
+        </Box>
+    );
+};
+
+const DownloadScreen = ({ modelName, progress, statusText }) => (
+    <Box flexDirection="column" paddingX={1} paddingY={1}>
+        <AgentLogo /><Newline />
+        <Text color="gray">{'─'.repeat(69)}</Text>
+        <Text bold> Descargando modelo de HuggingFace</Text><Newline />
+        <Text color="cyan"> {modelName}</Text>
+        <Newline />
+        <Box>
+            <Text color="gray"> [</Text>
+            <Text color="green">{'█'.repeat(Math.floor(progress / 2))}</Text>
+            <Text color="gray">{'░'.repeat(50 - Math.floor(progress / 2))}</Text>
+            <Text color="gray">] </Text>
+            <Text color="white">{progress}%</Text>
+        </Box>
+        <Newline />
+        <Text color="gray"> {statusText || 'Descargando...'}</Text>
+        <Text color="gray">{'╌'.repeat(69)}</Text>
+    </Box>
+);
+
+const ModelScreen = ({ provider, menuIndex, inputText, ollamaModels, ollamaStatus }) => {
+    const isOllama = provider?.id === 'ollama';
+    const isHF = provider?.id === 'huggingface';
+    let suggestions;
+    if (isOllama) {
+        suggestions = ollamaStatus === 'running' ? ollamaModels : [];
+    } else {
+        suggestions = PROVIDER_MODELS[provider?.id] || [];
+    }
+    const listLabel = isOllama && ollamaStatus === 'running' ? 'Modelos instalados' : 'Suggestions';
+    return (
+        <Box flexDirection="column" paddingX={1} paddingY={1}>
+            <AgentLogo /><Newline />
+            <Text color="gray">{'─'.repeat(69)}</Text>
+            <Text bold> {isHF ? 'Escribe el modelo de HuggingFace' : 'Select or type model for'} <Text color="#00FF87">{provider?.label}</Text></Text><Newline />
+            {isHF && (
+                <Box flexDirection="column">
+                    <Text color="gray"> Formato: org/modelo (ej: inclusionai/ling-2.6-1t)</Text>
+                    <Text color="gray"> Se descargará via Ollama y se usará localmente.</Text>
+                    <Newline />
+                </Box>
             )}
             <Box borderStyle="single" borderColor="cyan" paddingX={1}>
                 <Text color="gray">Model: </Text><Text>{inputText}</Text><Text color="white">█</Text>
@@ -286,14 +306,6 @@ const ModelScreen = ({ provider, menuIndex, inputText, ollamaModels, ollamaStatu
                     <Text color="yellow"> ⚠ Ollama está corriendo pero no hay modelos descargados.</Text>
                     <Text color="gray"> Descarga uno con: </Text>
                     <Text color="cyan">   ollama pull llama3</Text>
-                </Box>
-            )}
-            {isTogether && togetherStatus === 'fetching' && (
-                <Text color="yellow"> ⏳ Cargando modelos de Together AI...</Text>
-            )}
-            {isTogether && togetherStatus === 'error' && (
-                <Box flexDirection="column">
-                    <Text color="yellow"> ⚠ No se pudieron cargar los modelos. Escribe el nombre manualmente.</Text>
                 </Box>
             )}
             {suggestions.length > 0 && (
@@ -367,8 +379,8 @@ const App = ({ config: initCfg }) => {
     const [screen, setScreen]             = useState(initScreen());
     const [ollamaModels, setOllamaModels] = useState([]);
     const [ollamaStatus, setOllamaStatus] = useState('checking'); // 'checking' | 'running' | 'not_running'
-    const [togetherModels, setTogetherModels] = useState([]);
-    const [togetherStatus, setTogetherStatus] = useState('idle'); // 'idle' | 'fetching' | 'loaded' | 'error'
+    const [dlProgress, setDlProgress] = useState(0);
+    const [dlStatus, setDlStatus] = useState('');
     const [menuIndex, setMenuIndex]       = useState(0);
     const [formInput, setFormInput]       = useState('');
     const [apiKeyError, setApiKeyError]   = useState(false);
@@ -503,21 +515,15 @@ const App = ({ config: initCfg }) => {
         if (screen === 'apikey') {
             if (key.escape) { setScreen('provider'); setFormInput(''); setApiKeyError(false); return; }
             if (key.return) {
-                const apiKey = selProvider?.id==='ollama' ? 'ollama' : formInput.trim();
-                if (selProvider?.id !== 'ollama' && !apiKey) {
+                const noKeyNeeded = selProvider?.id === 'ollama' || selProvider?.id === 'huggingface';
+                const apiKey = noKeyNeeded ? 'local' : formInput.trim();
+                if (!noKeyNeeded && !apiKey) {
                     setApiKeyError(true);
                     return;
                 }
                 setApiKeyError(false);
                 cfg.current = { ...cfg.current, provider:selProvider.id, apiKey };
                 saveConfig(cfg.current);
-                if (selProvider?.id === 'together' && apiKey) {
-                    setTogetherStatus('fetching');
-                    fetchTogetherModels(apiKey).then(models => {
-                        setTogetherModels(models);
-                        setTogetherStatus(models.length > 0 ? 'loaded' : 'error');
-                    });
-                }
                 setFormInput(''); setMenuIndex(0); setScreen('model');
                 return;
             }
@@ -525,14 +531,14 @@ const App = ({ config: initCfg }) => {
             if (str && !key.ctrl && !key.meta && str.length===1) setFormInput(p=>p+str);
             return;
         }
+        if (screen === 'downloading') {
+            // No input during download
+            return;
+        }
         if (screen === 'model') {
             let sugg;
             if (selProvider?.id === 'ollama') {
                 sugg = ollamaStatus === 'running' ? ollamaModels : [];
-            } else if (selProvider?.id === 'together' && togetherModels.length > 0) {
-                sugg = formInput
-                    ? togetherModels.filter(m => m.toLowerCase().includes(formInput.toLowerCase())).slice(0, 15)
-                    : togetherModels.slice(0, 15);
             } else {
                 sugg = PROVIDER_MODELS[selProvider?.id] || [];
             }
@@ -542,6 +548,44 @@ const App = ({ config: initCfg }) => {
             if (key.return) {
                 const model = formInput.trim() || sugg[menuIndex] || '';
                 if (!model) return;
+
+                if (selProvider?.id === 'huggingface') {
+                    // Iniciar descarga via Ollama
+                    const hfModel = model.startsWith('hf.co/') ? model : `hf.co/${model}`;
+                    setDlProgress(0);
+                    setDlStatus('Iniciando descarga...');
+                    setScreen('downloading');
+                    const proc = spawn('ollama', ['pull', hfModel], { stdio: ['ignore', 'pipe', 'pipe'] });
+                    let lastOutput = '';
+                    const parseProgress = (data) => {
+                        lastOutput = data.toString();
+                        const pctMatch = lastOutput.match(/(\d+)%/);
+                        if (pctMatch) setDlProgress(parseInt(pctMatch[1]));
+                        const statusLine = lastOutput.trim().split('\n').pop() || '';
+                        if (statusLine) setDlStatus(statusLine.substring(0, 60));
+                    };
+                    proc.stdout.on('data', parseProgress);
+                    proc.stderr.on('data', parseProgress);
+                    proc.on('close', code => {
+                        if (code === 0) {
+                            setDlProgress(100);
+                            setDlStatus('Descarga completada!');
+                            setSelModel(hfModel);
+                            cfg.current = { ...cfg.current, model: hfModel };
+                            saveConfig(cfg.current);
+                            setTimeout(() => { setFormInput(''); setScreen('main'); }, 1000);
+                        } else {
+                            setDlStatus(`Error (código ${code}). Verifica que Ollama esté corriendo.`);
+                            setTimeout(() => { setFormInput(''); setScreen('model'); }, 3000);
+                        }
+                    });
+                    proc.on('error', err => {
+                        setDlStatus(`Error: ${err.message}. Instala Ollama primero.`);
+                        setTimeout(() => { setFormInput(''); setScreen('model'); }, 3000);
+                    });
+                    return;
+                }
+
                 setSelModel(model);
                 cfg.current = { ...cfg.current, model };
                 saveConfig(cfg.current);
@@ -895,7 +939,8 @@ const App = ({ config: initCfg }) => {
     if (screen==='trust')    return <TrustScreen    menuIndex={menuIndex} />;
     if (screen==='provider') return <ProviderScreen menuIndex={menuIndex} />;
     if (screen==='apikey')   return <ApiKeyScreen   provider={selProvider} inputText={formInput} showError={apiKeyError} />;
-    if (screen==='model')    return <ModelScreen    provider={selProvider} menuIndex={menuIndex} inputText={formInput} ollamaModels={ollamaModels} ollamaStatus={ollamaStatus} togetherModels={togetherModels} togetherStatus={togetherStatus} />;
+    if (screen==='downloading') return <DownloadScreen modelName={formInput || selModel} progress={dlProgress} statusText={dlStatus} />;
+    if (screen==='model')    return <ModelScreen    provider={selProvider} menuIndex={menuIndex} inputText={formInput} ollamaModels={ollamaModels} ollamaStatus={ollamaStatus} />;
 
     const isWorking  = status !== 'idle';
     const spinner    = SPINNERS[spinFrame];

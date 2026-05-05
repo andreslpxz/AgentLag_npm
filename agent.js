@@ -97,14 +97,13 @@ async function createLLM(provider, model, apiKey, baseUrl) {
                 maxTokens: 3600,
             });
         }
-        case "together": {
-            const { ChatOpenAI } = await import("@langchain/openai");
-            return new ChatOpenAI({
+        case "huggingface": {
+            // HuggingFace models are downloaded and served via Ollama
+            const { ChatOllama } = await import("@langchain/ollama");
+            return new ChatOllama({
                 model,
-                apiKey: apiKey || process.env.TOGETHER_API_KEY,
-                configuration: { baseURL: "https://api.together.xyz/v1" },
+                baseUrl: baseUrl || process.env.OLLAMA_BASE_URL || "http://localhost:11434",
                 temperature: 0.4,
-                maxTokens: 3600,
             });
         }
         case "ollama": {
@@ -209,25 +208,44 @@ Cuando tengas la respuesta final y NO necesites más herramientas, responde norm
 function cleanReActResponse(text) {
     if (!text || typeof text !== 'string') return text;
     let cleaned = text
-        .replace(/^Thought:\s*/im, '')
-        .replace(/\nThought:\s*/gm, '\n')
-        .replace(/\nAction:[\s\S]*$/i, '')
+        // Limpiar Thought con o sin markdown
+        .replace(/^\*{0,2}Thought:?\*{0,2}\s*/im, '')
+        .replace(/\n\*{0,2}Thought:?\*{0,2}\s*/gm, '\n')
+        // Eliminar Action/Action Input/Observation residuales
+        .replace(/\n\*{0,2}Action:?\*{0,2}[\s\S]*$/i, '')
+        .replace(/\*{0,2}Observation:?\*{0,2}[\s\S]*$/im, '')
         .trim();
+    // Limpiar markdown básico para terminal
+    cleaned = stripMarkdown(cleaned);
     return cleaned || text;
+}
+
+// ─── Limpiar markdown para terminal ───────────────────────────────────────────
+export function stripMarkdown(text) {
+    if (!text) return text;
+    return text
+        .replace(/\*\*(.+?)\*\*/g, '$1')       // **bold** → bold
+        .replace(/\*(.+?)\*/g, '$1')            // *italic* → italic
+        .replace(/^\s*\*\s{3}/gm, '  • ')       // *   item → • item
+        .replace(/^\s*\*\s/gm, '• ')            // * item → • item
+        .replace(/^#{1,6}\s+/gm, '')            // # heading → heading
+        .replace(/`([^`]+)`/g, '$1');            // `code` → code
 }
 
 // ─── Parsear tool call desde texto ReAct ──────────────────────────────────────
 function parseToolCall(text) {
     if (!text || typeof text !== 'string') return null;
 
-    const actionMatch = text.match(/Action:\s*(\S+)/);
+    // Soportar Action con o sin markdown: Action:, **Action:**, **Action:**
+    const actionMatch = text.match(/\*{0,2}Action:?\*{0,2}\s*(\S+)/);
     if (!actionMatch) return null;
 
-    const name = actionMatch[1].trim();
+    const name = actionMatch[1].replace(/\*+/g, '').trim();
     const validNames = tools.map(t => t.name);
     if (!validNames.includes(name)) return null;
 
-    const inputMatch = text.match(/Action Input:\s*(\{[\s\S]*?\})/);
+    // Soportar Action Input con o sin markdown
+    const inputMatch = text.match(/\*{0,2}Action Input:?\*{0,2}\s*(\{[\s\S]*?\})/);
     if (!inputMatch) return null;
 
     try {
@@ -255,12 +273,12 @@ export async function buildAgent(overrides = {}) {
     if (!provider) throw new Error("No hay proveedor configurado. Ejecuta AgentLag para configurarlo.");
     if (!model)    throw new Error("No hay modelo configurado. Ejecuta AgentLag para configurarlo.");
 
-    if (provider !== "ollama" && !apiKey) {
+    if (provider !== "ollama" && provider !== "huggingface" && !apiKey) {
         const envVars = {
             groq: "GROQ_API_KEY", openai: "OPENAI_API_KEY",
             anthropic: "ANTHROPIC_API_KEY", openrouter: "OPENROUTER_API_KEY",
             deepseek: "DEEPSEEK_API_KEY", mistral: "MISTRAL_API_KEY",
-            nvidia: "NVIDIA_API_KEY", together: "TOGETHER_API_KEY", meta: "TOGETHER_API_KEY",
+            nvidia: "NVIDIA_API_KEY", meta: "TOGETHER_API_KEY",
         };
         const envKey = process.env[envVars[provider]];
         if (!envKey) {
