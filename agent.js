@@ -1,6 +1,6 @@
 import { StateGraph, START, Annotation } from "@langchain/langgraph";
 import { ToolNode, toolsCondition } from "@langchain/langgraph/prebuilt";
-import { SystemMessage } from "@langchain/core/messages";
+import { SystemMessage, HumanMessage, AIMessage, ToolMessage } from "@langchain/core/messages";
 import { createRequire } from "module";
 import { fileURLToPath } from "url";
 import path from "path";
@@ -162,25 +162,88 @@ Corres en Termux (Android/Linux). Modelo activo: ${model} (${provider}).
     );
 }
 
+// ─── ReAct System Prompt (para modelos sin soporte de tools) ──────────────────
+function buildReActSystemPrompt(provider, model) {
+    const toolDescriptions = tools.map(t => {
+        const params = Object.entries(t.schema.shape).map(([k, v]) => {
+            const desc = v._def?.description || v.description || '';
+            return `    - ${k}: ${desc}`;
+        }).join('\n');
+        return `  ${t.name}: ${t.description}\n    Parámetros:\n${params}`;
+    }).join('\n\n');
+
+    return new SystemMessage(
+        `Eres AgentLag, un asistente experto en desarrollo de software, gestión de archivos y terminal.
+Corres en Termux (Android/Linux). Modelo activo: ${model} (${provider}).
+
+🛠️ HERRAMIENTAS DISPONIBLES:
+${toolDescriptions}
+
+📋 CÓMO USAR HERRAMIENTAS:
+Cuando necesites usar una herramienta, responde EXACTAMENTE con este formato:
+
+Thought: [tu razonamiento sobre qué hacer]
+Action: [nombre_de_herramienta]
+Action Input: {"param1": "valor1", "param2": "valor2"}
+
+Después de recibir el resultado (Observation), continúa razonando.
+Cuando tengas la respuesta final y NO necesites más herramientas, responde normalmente SIN usar el formato Action/Action Input.
+
+📋 REGLAS DE COMPORTAMIENTO:
+- Antes de usar una herramienta, explica brevemente qué vas a hacer en Thought.
+- Si algo falla, analiza el error y propón alternativas concretas.
+- Al terminar una tarea, haz un resumen breve de lo que hiciste.
+- Responde SIEMPRE en el idioma que use el usuario.
+- Sé preciso y conciso. Evita repeticiones innecesarias.
+- IMPORTANTE: El JSON de Action Input debe ser válido y estar en una sola línea.
+
+🎯 ESPECIALIDADES:
+- Node.js, npm, LangChain/LangGraph, React, Python
+- Desarrollo en Termux/Android
+- Scripts de automatización, bash, git
+- Depuración y resolución de errores`
+    );
+}
+
+// ─── Parsear tool call desde texto ReAct ──────────────────────────────────────
+function parseToolCall(text) {
+    if (!text || typeof text !== 'string') return null;
+
+    const actionMatch = text.match(/Action:\s*(\S+)/);
+    if (!actionMatch) return null;
+
+    const name = actionMatch[1].trim();
+    const validNames = tools.map(t => t.name);
+    if (!validNames.includes(name)) return null;
+
+    const inputMatch = text.match(/Action Input:\s*(\{[\s\S]*?\})/);
+    if (!inputMatch) return null;
+
+    try {
+        const args = JSON.parse(inputMatch[1].trim());
+        return { name, args, id: `react_${Date.now()}_${Math.random().toString(36).slice(2, 8)}` };
+    } catch {
+        return null;
+    }
+}
+
 // ─── buildAgent ───────────────────────────────────────────────────────────────
 /**
  * Construye el agente.
- * @param {object} [overrides] - Opcional: { provider, model, apiKey, baseUrl }
- *   Si no se pasa, lee de ~/.agentlag/config.json o cae en .env como fallback.
+ * @param {object} [overrides] - { provider, model, apiKey, baseUrl, forceReAct }
  */
 export async function buildAgent(overrides = {}) {
     const cfg = loadConfig();
 
     const provider = overrides.provider || cfg.provider || "groq";
     const model    = overrides.model    || cfg.model    || "qwen/qwen3-32b";
-    // API key: prioridad → override > config guardada > variable de entorno
     const apiKey   = overrides.apiKey   || cfg.apiKey   || null;
     const baseUrl  = overrides.baseUrl  || cfg.baseUrl  || null;
+    const forceReAct = overrides.forceReAct || false;
 
     if (!provider) throw new Error("No hay proveedor configurado. Ejecuta AgentLag para configurarlo.");
     if (!model)    throw new Error("No hay modelo configurado. Ejecuta AgentLag para configurarlo.");
 
-    // Para providers que no son ollama, necesitamos API key
     if (provider !== "ollama" && !apiKey) {
         const envVars = {
             groq: "GROQ_API_KEY", openai: "OPENAI_API_KEY",
@@ -197,7 +260,13 @@ export async function buildAgent(overrides = {}) {
         }
     }
 
-    const llm         = await createLLM(provider, model, apiKey, baseUrl);
+    const llm = await createLLM(provider, model, apiKey, baseUrl);
+
+    if (forceReAct) {
+        return buildReActGraph(llm, provider, model);
+    }
+
+    // Intentar flujo normal con tools nativas
     const llmWithTools = llm.bindTools(tools);
     const systemPrompt = buildSystemPrompt(provider, model);
 
@@ -216,5 +285,58 @@ export async function buildAgent(overrides = {}) {
         .addConditionalEdges("agent", toolsCondition)
         .addEdge("tools", "agent");
 
-    return workflow.compile();
+    const compiled = workflow.compile();
+    compiled._agentMode = 'tools';
+    return compiled;
+}
+
+// ─── ReAct Graph (para modelos sin soporte de tools) ──────────────────────────
+function buildReActGraph(llm, provider, model) {
+    const reactPrompt = buildReActSystemPrompt(provider, model);
+
+    const toolMap = {};
+    for (const t of tools) {
+        toolMap[t.name] = t;
+    }
+
+    const callModelReAct = async (state) => {
+        // Convertir ToolMessages a observaciones legibles por el modelo
+        const processedMessages = state.messages.map(m => {
+            if (m instanceof ToolMessage) {
+                return new HumanMessage(`Observation: ${m.content}`);
+            }
+            return m;
+        });
+
+        const messages = [reactPrompt, ...processedMessages];
+        const response = await llm.invoke(messages);
+
+        const toolCall = parseToolCall(response.content);
+        if (toolCall) {
+            const aiMsg = new AIMessage({
+                content: response.content,
+                tool_calls: [{
+                    name: toolCall.name,
+                    args: toolCall.args,
+                    id: toolCall.id,
+                }],
+            });
+            return { messages: [aiMsg] };
+        }
+
+        return { messages: [response] };
+    };
+
+    const toolNode = new ToolNode(tools);
+
+    const workflow = new StateGraph(AgentState)
+        .addNode("agent", callModelReAct)
+        .addNode("tools", toolNode)
+        .addEdge(START, "agent")
+        .addConditionalEdges("agent", toolsCondition)
+        .addEdge("tools", "agent");
+
+    const compiled = workflow.compile();
+    compiled._agentMode = 'react';
+    return compiled;
 }
