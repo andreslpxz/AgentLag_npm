@@ -2,7 +2,7 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { render, Text, Box, useInput, Static, Newline, useStdout } from 'ink';
 import { buildAgent } from './agent.js';
-import { fetchOllamaModels, isOllamaRunning } from './ollama_utils.js';
+import { fetchOllamaModels, isOllamaRunning, fetchTogetherModels } from './ollama_utils.js';
 import { HumanMessage, AIMessage } from '@langchain/core/messages';
 import fs from 'fs';
 import path from 'path';
@@ -237,19 +237,32 @@ const ApiKeyScreen = ({ provider, inputText }) => (
     </Box>
 );
 
-const ModelScreen = ({ provider, menuIndex, inputText, ollamaModels, ollamaStatus }) => {
+const ModelScreen = ({ provider, menuIndex, inputText, ollamaModels, ollamaStatus, togetherModels, togetherStatus }) => {
     const isOllama = provider?.id === 'ollama';
+    const isTogether = provider?.id === 'together';
     let suggestions;
     if (isOllama) {
         suggestions = ollamaStatus === 'running' ? ollamaModels : [];
+    } else if (isTogether && togetherModels.length > 0) {
+        suggestions = inputText
+            ? togetherModels.filter(m => m.toLowerCase().includes(inputText.toLowerCase())).slice(0, 15)
+            : togetherModels.slice(0, 15);
     } else {
         suggestions = PROVIDER_MODELS[provider?.id] || [];
     }
+    const listLabel = isOllama && ollamaStatus === 'running'
+        ? 'Modelos instalados'
+        : isTogether && togetherModels.length > 0
+            ? `Modelos disponibles (${togetherModels.length} total)`
+            : 'Suggestions';
     return (
         <Box flexDirection="column" paddingX={1} paddingY={1}>
             <AgentLogo /><Newline />
             <Text color="gray">{'─'.repeat(69)}</Text>
             <Text bold> Select or type model for <Text color="#00FF87">{provider?.label}</Text></Text><Newline />
+            {isTogether && (
+                <Text color="gray"> Pega cualquier nombre de modelo de HuggingFace (ej: inclusionai/ling-2.6-1t)</Text>
+            )}
             <Box borderStyle="single" borderColor="cyan" paddingX={1}>
                 <Text color="gray">Model: </Text><Text>{inputText}</Text><Text color="white">█</Text>
             </Box>
@@ -273,9 +286,17 @@ const ModelScreen = ({ provider, menuIndex, inputText, ollamaModels, ollamaStatu
                     <Text color="cyan">   ollama pull llama3</Text>
                 </Box>
             )}
+            {isTogether && togetherStatus === 'fetching' && (
+                <Text color="yellow"> ⏳ Cargando modelos de Together AI...</Text>
+            )}
+            {isTogether && togetherStatus === 'error' && (
+                <Box flexDirection="column">
+                    <Text color="yellow"> ⚠ No se pudieron cargar los modelos. Escribe el nombre manualmente.</Text>
+                </Box>
+            )}
             {suggestions.length > 0 && (
                 <Box flexDirection="column">
-                    <Text color="gray"> {isOllama && ollamaStatus === 'running' ? 'Modelos instalados' : 'Suggestions'} (↑↓ pick · Enter confirm):</Text>
+                    <Text color="gray"> {listLabel} (↑↓ pick · Enter confirm):</Text>
                     {suggestions.map((m,i) => (
                         <Box key={m}>
                             {i===menuIndex
@@ -343,6 +364,8 @@ const App = ({ config: initCfg }) => {
     const [screen, setScreen]             = useState(initScreen());
     const [ollamaModels, setOllamaModels] = useState([]);
     const [ollamaStatus, setOllamaStatus] = useState('checking'); // 'checking' | 'running' | 'not_running'
+    const [togetherModels, setTogetherModels] = useState([]);
+    const [togetherStatus, setTogetherStatus] = useState('idle'); // 'idle' | 'fetching' | 'loaded' | 'error'
     const [menuIndex, setMenuIndex]       = useState(0);
     const [formInput, setFormInput]       = useState('');
     const [selProvider, setSelProvider]   = useState(
@@ -479,6 +502,13 @@ const App = ({ config: initCfg }) => {
                 const apiKey = selProvider?.id==='ollama' ? 'ollama' : formInput.trim();
                 cfg.current = { ...cfg.current, provider:selProvider.id, apiKey };
                 saveConfig(cfg.current);
+                if (selProvider?.id === 'together' && apiKey) {
+                    setTogetherStatus('fetching');
+                    fetchTogetherModels(apiKey).then(models => {
+                        setTogetherModels(models);
+                        setTogetherStatus(models.length > 0 ? 'loaded' : 'error');
+                    });
+                }
                 setFormInput(''); setMenuIndex(0); setScreen('model');
                 return;
             }
@@ -487,7 +517,16 @@ const App = ({ config: initCfg }) => {
             return;
         }
         if (screen === 'model') {
-            const sugg = (selProvider?.id === 'ollama' && ollamaStatus === 'running') ? ollamaModels : (selProvider?.id === 'ollama' ? [] : (PROVIDER_MODELS[selProvider?.id] || []));
+            let sugg;
+            if (selProvider?.id === 'ollama') {
+                sugg = ollamaStatus === 'running' ? ollamaModels : [];
+            } else if (selProvider?.id === 'together' && togetherModels.length > 0) {
+                sugg = formInput
+                    ? togetherModels.filter(m => m.toLowerCase().includes(formInput.toLowerCase())).slice(0, 15)
+                    : togetherModels.slice(0, 15);
+            } else {
+                sugg = PROVIDER_MODELS[selProvider?.id] || [];
+            }
             if (key.escape) { setScreen('apikey'); setFormInput(''); return; }
             if (key.upArrow)   { setMenuIndex(i=>Math.max(0,i-1)); return; }
             if (key.downArrow) { setMenuIndex(i=>Math.min(sugg.length-1,i+1)); return; }
@@ -821,7 +860,7 @@ const App = ({ config: initCfg }) => {
     if (screen==='trust')    return <TrustScreen    menuIndex={menuIndex} />;
     if (screen==='provider') return <ProviderScreen menuIndex={menuIndex} />;
     if (screen==='apikey')   return <ApiKeyScreen   provider={selProvider} inputText={formInput} />;
-    if (screen==='model')    return <ModelScreen    provider={selProvider} menuIndex={menuIndex} inputText={formInput} ollamaModels={ollamaModels} ollamaStatus={ollamaStatus} />;
+    if (screen==='model')    return <ModelScreen    provider={selProvider} menuIndex={menuIndex} inputText={formInput} ollamaModels={ollamaModels} ollamaStatus={ollamaStatus} togetherModels={togetherModels} togetherStatus={togetherStatus} />;
 
     const isWorking  = status !== 'idle';
     const spinner    = SPINNERS[spinFrame];
