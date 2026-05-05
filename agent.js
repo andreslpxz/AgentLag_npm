@@ -30,7 +30,7 @@ const AgentState = Annotation.Root({
 });
 
 // ─── Crear LLM según proveedor ────────────────────────────────────────────────
-async function createLLM(provider, model, apiKey) {
+async function createLLM(provider, model, apiKey, baseUrl) {
     switch (provider) {
         case "groq": {
             const { ChatGroq } = await import("@langchain/groq");
@@ -111,6 +111,7 @@ async function createLLM(provider, model, apiKey) {
             const { ChatOllama } = await import("@langchain/ollama");
             return new ChatOllama({
                 model,
+                baseUrl: baseUrl || process.env.OLLAMA_BASE_URL || "http://localhost:11434",
                 temperature: 0.4,
             });
         }
@@ -164,7 +165,7 @@ Corres en Termux (Android/Linux). Modelo activo: ${model} (${provider}).
 // ─── buildAgent ───────────────────────────────────────────────────────────────
 /**
  * Construye el agente.
- * @param {object} [overrides] - Opcional: { provider, model, apiKey }
+ * @param {object} [overrides] - Opcional: { provider, model, apiKey, baseUrl }
  *   Si no se pasa, lee de ~/.agentlag/config.json o cae en .env como fallback.
  */
 export async function buildAgent(overrides = {}) {
@@ -174,6 +175,7 @@ export async function buildAgent(overrides = {}) {
     const model    = overrides.model    || cfg.model    || "qwen/qwen3-32b";
     // API key: prioridad → override > config guardada > variable de entorno
     const apiKey   = overrides.apiKey   || cfg.apiKey   || null;
+    const baseUrl  = overrides.baseUrl  || cfg.baseUrl  || null;
 
     if (!provider) throw new Error("No hay proveedor configurado. Ejecuta AgentLag para configurarlo.");
     if (!model)    throw new Error("No hay modelo configurado. Ejecuta AgentLag para configurarlo.");
@@ -195,7 +197,7 @@ export async function buildAgent(overrides = {}) {
         }
     }
 
-    const llm         = await createLLM(provider, model, apiKey);
+    const llm         = await createLLM(provider, model, apiKey, baseUrl);
     const llmWithTools = llm.bindTools(tools);
     const systemPrompt = buildSystemPrompt(provider, model);
 

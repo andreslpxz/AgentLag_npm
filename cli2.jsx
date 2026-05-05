@@ -2,6 +2,7 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { render, Text, Box, useInput, Static, Newline, useStdout } from 'ink';
 import { buildAgent } from './agent.js';
+import { fetchOllamaModels } from './ollama_utils.js';
 import { HumanMessage, AIMessage } from '@langchain/core/messages';
 import fs from 'fs';
 import path from 'path';
@@ -205,18 +206,15 @@ const ProviderScreen = ({ menuIndex }) => (
     <Box flexDirection="column" paddingX={1} paddingY={1}>
         <AgentLogo /><Newline />
         <Text color="gray">{'─'.repeat(69)}</Text>
-        <Text bold> Select AI Provider:</Text><Newline />
+        <Text bold> Choose your LLM Provider</Text><Newline />
         {PROVIDERS.map((p,i) => (
             <Box key={p.id}>
                 {i===menuIndex
-                    ? <Text color="cyan">❯ <Text color="white" bold>{String(i+1).padStart(2)+'. '+p.label}</Text>
-                        <Text color="cyan">{'  '+p.desc}</Text></Text>
-                    : <Text color="gray">  {String(i+1).padStart(2)+'. '+p.label}
-                        <Text dimColor>{'  '+p.desc}</Text></Text>}
+                    ? <Box><Text color="cyan">❯ </Text><Text color="white" bold>{p.label.padEnd(16)}</Text><Text color="gray">{p.desc}</Text></Box>
+                    : <Box><Text>  </Text><Text color="gray">{p.label.padEnd(16)}</Text><Text color="gray" dimColor>{p.desc}</Text></Box>}
             </Box>
         ))}
-        <Newline />
-        <Text color="gray">↑↓ navigate · Enter select · Ctrl+C exit</Text>
+        <Newline /><Text color="gray"> Enter to select · Esc to go back</Text>
         <Text color="gray">{'╌'.repeat(69)}</Text>
     </Box>
 );
@@ -225,12 +223,12 @@ const ApiKeyScreen = ({ provider, inputText }) => (
     <Box flexDirection="column" paddingX={1} paddingY={1}>
         <AgentLogo /><Newline />
         <Text color="gray">{'─'.repeat(69)}</Text>
-        <Text bold> Enter API Key for <Text color="#00FF87">{provider?.label}</Text></Text>
-        {provider?.id==='ollama' && <Text color="gray"> Ollama runs locally — press Enter to skip</Text>}
+        <Text bold> Enter API Key for <Text color="#00FF87">{provider?.label}</Text></Text><Newline />
+        <Text color="gray"> {provider?.id==='ollama' ? 'No key needed for local Ollama' : 'Your key is stored locally in ~/.agentlag/config.json'}</Text>
         <Newline />
         <Box borderStyle="single" borderColor="cyan" paddingX={1}>
-            <Text color="gray">API Key: </Text>
-            <Text>{'*'.repeat(inputText.length)}</Text>
+            <Text color="gray">Key: </Text>
+            <Text>{provider?.id==='ollama' ? 'Local' : '*'.repeat(inputText.length)}</Text>
             <Text color="white">█</Text>
         </Box>
         <Newline />
@@ -239,8 +237,8 @@ const ApiKeyScreen = ({ provider, inputText }) => (
     </Box>
 );
 
-const ModelScreen = ({ provider, menuIndex, inputText }) => {
-    const suggestions = PROVIDER_MODELS[provider?.id] || [];
+const ModelScreen = ({ provider, menuIndex, inputText, ollamaModels }) => {
+    const suggestions = (provider?.id === 'ollama' && ollamaModels.length > 0) ? ollamaModels : (PROVIDER_MODELS[provider?.id] || []);
     return (
         <Box flexDirection="column" paddingX={1} paddingY={1}>
             <AgentLogo /><Newline />
@@ -298,39 +296,23 @@ const CommandMenu = ({ input, selectedIndex }) => {
 const ShortcutsHelp = () => (
     <Box flexDirection="column">
         <Text color="gray">  ! for shell mode   double tap esc to clear   ctrl+shift+_ to undo</Text>
-        <Text color="gray">  / for commands     shift+tab to auto-accept   ctrl+z to suspend</Text>
-        <Text color="gray">  @ for file paths   ctrl+o for verbose output  ctrl+v to paste</Text>
-        <Text color="gray">  & for background   ctrl+t to toggle tasks     alt+p switch model</Text>
-        <Text color="gray">  /btw side question ctrl+s to stash prompt     ctrl+g edit $EDITOR</Text>
     </Box>
 );
 
-// ─── App ──────────────────────────────────────────────────────────────────────
+const HR_FULL = () => <Text color="gray">{'─'.repeat(process.stdout.columns || 80)}</Text>;
+
+// ─── App principal ────────────────────────────────────────────────────────────
 const App = ({ config: initCfg }) => {
-
-    // Determinar pantalla inicial según config guardada
     const initScreen = () => {
-        // Validamos explícitamente cada paso para que si falta algo, caiga ahí.
         if (!initCfg.colorSet) return 'color';
-
-        // Si hay una configuración de provider y model validas:
-        if (initCfg.provider && initCfg.model) {
-            // Siempre pasa por 'trust' si no confió antes en este dir
-            const trustedDirs = initCfg.trustedDirs || [];
-            if (trustedDirs.includes(process.cwd()) || initCfg.trusted === true) {
-                return 'main';
-            }
-            return 'trust';
-        }
-
-        // Si no está configurado provider/model, sigue el flujo
-        if (!initCfg.trustedDirs?.includes(process.cwd()) && initCfg.trusted !== true) return 'trust';
+        if (!initCfg.trusted) return 'trust';
         if (!initCfg.provider) return 'provider';
         if (!initCfg.model) return 'model';
         return 'main';
     };
 
     const [screen, setScreen]             = useState(initScreen());
+    const [ollamaModels, setOllamaModels] = useState([]);
     const [menuIndex, setMenuIndex]       = useState(0);
     const [formInput, setFormInput]       = useState('');
     const [selProvider, setSelProvider]   = useState(
@@ -351,7 +333,7 @@ const App = ({ config: initCfg }) => {
     const [pendingConfirm, setPendingConfirm] = useState(null);
     const [confirmIdx, setConfirmIdx]     = useState(0);
     const [totalTokens, setTotalTokens]   = useState(0);
-    const [history, setHistory]           = useState([]);
+    const [staticHistory, setStaticHistory] = useState([]);
     const msgRef = useRef([]);
     const [agent, setAgent] = useState(null);
 
@@ -360,42 +342,40 @@ const App = ({ config: initCfg }) => {
     const [showTasks, setShowTasks]       = useState(false);
     const abortCtrlRef                    = useRef(null);
 
-    // Hooks de layout movidos arriba para evitar errores de React
+    // Hooks de layout
     const { stdout } = useStdout();
     const [rows, setRows] = useState(stdout?.rows || 24);
 
     useEffect(() => {
         if (!stdout) return;
-        const resizeHandler = () => setRows(stdout.rows);
-        stdout.on('resize', resizeHandler);
-        return () => stdout.off('resize', resizeHandler);
+        const h = () => setRows(stdout.rows);
+        stdout.on('resize', h);
+        return () => stdout.off('resize', h);
     }, [stdout]);
 
-    // Inicializar el agente cuando entramos a main y guardamos config
+    // ── Ciclos ────────────────────────────────────────────────────────────────
     useEffect(() => {
-        if (screen === 'main') {
-            buildAgent(cfg.current).then(a => setAgent(a)).catch(err => {
-                setHistory([{type:'assistant', text:'❌ Error al iniciar agente: '+err.message}]);
+        let t;
+        if (status !== 'idle') {
+            t = setInterval(() => {
+                setSpinFrame(f => (f + 1) % SPINNERS.length);
+                if (thinkStart) setElapsed(Math.floor((Date.now() - thinkStart) / 1000));
+            }, 100);
+        } else {
+            setElapsed(0);
+        }
+        return () => clearInterval(t);
+    }, [status, thinkStart]);
+
+    // Inicializar agente
+    useEffect(() => {
+        if (screen === 'main' && !agent) {
+            buildAgent().then(setAgent).catch(err => {
+                setStaticHistory([{type:'assistant', text:'❌ Error al iniciar agente: '+err.message}]);
             });
         }
-    }, [screen]);
+    }, [screen, agent]);
 
-
-    // Timer
-    useEffect(() => {
-        const t = setInterval(() => {
-            setSpinFrame(f => (f+1) % SPINNERS.length);
-            if (thinkStart) setElapsed(Math.floor((Date.now()-thinkStart)/1000));
-        }, 200);
-        return () => clearInterval(t);
-    }, [thinkStart]);
-
-    // Guardar sesión
-    useEffect(() => {
-        if (screen === 'main') saveSession(history);
-    }, [history, screen]);
-
-    // ── Confirmación Promise-based ────────────────────────────────────────────
     const askConfirm = useCallback((toolName, detail) =>
         new Promise(resolve => {
             setConfirmIdx(0);
@@ -440,7 +420,9 @@ const App = ({ config: initCfg }) => {
             if (key.upArrow)   setMenuIndex(i => Math.max(0, i-1));
             if (key.downArrow) setMenuIndex(i => Math.min(PROVIDERS.length-1, i+1));
             if (key.return) {
-                setSelProvider(PROVIDERS[menuIndex]);
+                const selected = PROVIDERS[menuIndex];
+                setSelProvider(selected);
+                if (selected.id === 'ollama') { fetchOllamaModels().then(setOllamaModels); }
                 setMenuIndex(0); setFormInput(''); setScreen('apikey');
             }
             return;
@@ -459,7 +441,7 @@ const App = ({ config: initCfg }) => {
             return;
         }
         if (screen === 'model') {
-            const sugg = PROVIDER_MODELS[selProvider?.id] || [];
+            const sugg = (selProvider?.id === 'ollama' && ollamaModels.length > 0) ? ollamaModels : (PROVIDER_MODELS[selProvider?.id] || []);
             if (key.escape) { setScreen('apikey'); setFormInput(''); return; }
             if (key.upArrow)   { setMenuIndex(i=>Math.max(0,i-1)); return; }
             if (key.downArrow) { setMenuIndex(i=>Math.min(sugg.length-1,i+1)); return; }
@@ -485,7 +467,7 @@ const App = ({ config: initCfg }) => {
             if (key.ctrl && str === 'o') {
                 setIsVerbose(p => {
                     const next = !p;
-                    setHistory(prev => [...prev, { type: 'assistant', text: `ℹ️ Verbose mode is now ${next ? 'ON' : 'OFF'}` }]);
+                    setStaticHistory(prev => [...prev, { type: 'assistant', text: `ℹ️ Verbose mode is now ${next ? 'ON' : 'OFF'}` }]);
                     return next;
                 });
                 return;
@@ -493,7 +475,7 @@ const App = ({ config: initCfg }) => {
             if (key.ctrl && str === 't') {
                 setShowTasks(p => {
                     const next = !p;
-                    setHistory(prev => [...prev, { type: 'assistant', text: `ℹ️ Tasks mode is now ${next ? 'ON' : 'OFF'}` }]);
+                    setStaticHistory(prev => [...prev, { type: 'assistant', text: `ℹ️ Tasks mode is now ${next ? 'ON' : 'OFF'}` }]);
                     return next;
                 });
                 return;
@@ -515,7 +497,7 @@ const App = ({ config: initCfg }) => {
             // y si ya esta vacio limpiar el historial.
             if (key.escape) {
                 if (input === '') {
-                    setHistory([]); msgRef.current = []; saveSession([]);
+                    setStaticHistory([]); msgRef.current = []; saveSession([]);
                 } else {
                     setInput(''); setCmdIndex(0);
                 }
@@ -542,7 +524,7 @@ const App = ({ config: initCfg }) => {
                 setStatus('idle');
                 setActiveTool(null);
                 setThinkStart(null);
-                setHistory(prev => [...prev, { type: 'assistant', text: '🛑 Ejecución cancelada por el usuario.' }]);
+                setStaticHistory(prev => [...prev, { type: 'assistant', text: '🛑 Ejecución cancelada por el usuario.' }]);
                 return;
             }
             if (key.escape) { /* abort TODO */ }
@@ -565,15 +547,15 @@ const App = ({ config: initCfg }) => {
                 return;
             }
             if (trimmed === '/clear') {
-                setHistory([]); msgRef.current = []; saveSession([]); setInput(''); return;
+                setStaticHistory([]); msgRef.current = []; saveSession([]); setInput(''); return;
             }
             if (trimmed === '/help') {
                 const helpText = SLASH_COMMANDS.map(c => `  ${c.cmd.padEnd(12)} - ${c.desc.join(' ')}`).join('\n');
-                setHistory(prev => [...prev, { type: 'assistant', text: `Comandos disponibles:\n${helpText}` }]);
+                setStaticHistory(prev => [...prev, { type: 'assistant', text: `Comandos disponibles:\n${helpText}` }]);
                 setInput(''); return;
             }
             if (trimmed.startsWith('/btw')) {
-                setHistory(prev => [...prev, { type: 'assistant', text: '📝 Modo nota / side question activo...' }]);
+                setStaticHistory(prev => [...prev, { type: 'assistant', text: '📝 Modo nota / side question activo...' }]);
                 setInput(''); return;
             }
             if (trimmed === '/import') {
@@ -582,10 +564,10 @@ const App = ({ config: initCfg }) => {
                     msgRef.current = s.history.map(m =>
                         m.type === 'user' ? new HumanMessage(m.text) : new AIMessage(m.text)
                     );
-                    setHistory(s.history);
-                    setHistory(prev => [...prev, { type:'assistant', text:'✅ Historial importado correctamente.' }]);
+                    setStaticHistory(s.history);
+                    setStaticHistory(prev => [...prev, { type:'assistant', text:'✅ Historial importado correctamente.' }]);
                 } else {
-                    setHistory(prev => [...prev, { type:'assistant', text:'⚠️ No hay historial previo para importar en este proyecto.' }]);
+                    setStaticHistory(prev => [...prev, { type:'assistant', text:'⚠️ No hay historial previo para importar en este proyecto.' }]);
                 }
                 setInput(''); return;
             }
@@ -599,23 +581,19 @@ const App = ({ config: initCfg }) => {
             return;
         }
 
-        // key.escape handled above
-        if (key.backspace||key.delete) { setInput(p=>p.slice(0,-1)); setCmdIndex(0); return; }
-
-        // Paste y escritura normal: str puede llegar como string largo al pegar
-        if (str && !key.ctrl && !key.meta) {
-            setInput(p => p + str);
-            setCmdIndex(0);
+        if (key.backspace||key.delete) { setInput(p => p.slice(0, -1)); setCmdIndex(0); return; }
+        if (str && !key.ctrl && !key.meta && str.length === 1) {
+            setInput(p => p + str); setCmdIndex(0);
         }
     });
 
     // ── Agente ────────────────────────────────────────────────────────────────
     const handleSend = useCallback(async (msg) => {
         if (!agent) {
-            setHistory(prev => [...prev, { type:'assistant', text:'❌ El agente aún no está inicializado.' }]);
+            setStaticHistory(prev => [...prev, { type:'assistant', text:'❌ El agente aún no está inicializado.' }]);
             return;
         }
-        setHistory(prev => [...prev, { type:'user', text:msg }]);
+        setStaticHistory(prev => [...prev, { type:'user', text:msg }]);
         setThinkWord(randWord()); setThinkStart(Date.now()); setElapsed(0);
         setStatus('thinking'); setActiveTool(null);
 
@@ -649,7 +627,7 @@ const App = ({ config: initCfg }) => {
                             setStatus('idle');
                             const ok = await askConfirm(tc.name, detail);
                             if (!ok) {
-                                setHistory(prev=>[...prev,{type:'assistant',text:'⚠ Acción cancelada por el usuario.'}]);
+                                setStaticHistory(prev=>[...prev,{type:'assistant',text:'⚠ Acción cancelada por el usuario.'}]);
                                 setStatus('idle'); return;
                             }
                         }
@@ -672,7 +650,7 @@ const App = ({ config: initCfg }) => {
                 if (chunk.tools) {
                     for (const tm of (chunk.tools.messages||[])) {
                         if (tm.name && tm.content !== undefined) {
-                            setHistory(prev=>[...prev,{
+                            setStaticHistory(prev=>[...prev,{
                                 type:'tool', name:tm.name,
                                 input: pendingTC?.name===tm.name ? pendingTC.args : null,
                                 output:tm.content, running:false,
@@ -704,10 +682,10 @@ const App = ({ config: initCfg }) => {
                     if (c[nk]?.messages) allMsgs.push(...c[nk].messages);
             msgRef.current=[...msgRef.current,...allMsgs];
 
-            if (responseText) setHistory(prev=>[...prev,{type:'assistant',text:responseText}]);
+            if (responseText) setStaticHistory(prev=>[...prev,{type:'assistant',text:responseText}]);
 
         } catch(err) {
-            setHistory(prev=>[...prev,{type:'assistant',text:`❌ Error: ${err.message}`}]);
+            setStaticHistory(prev=>[...prev,{type:'assistant',text:`❌ Error: ${err.message}`}]);
         } finally {
             setStatus('idle'); setActiveTool(null); setThinkStart(null); setElapsed(0);
         }
@@ -718,7 +696,7 @@ const App = ({ config: initCfg }) => {
     if (screen==='trust')    return <TrustScreen    menuIndex={menuIndex} />;
     if (screen==='provider') return <ProviderScreen menuIndex={menuIndex} />;
     if (screen==='apikey')   return <ApiKeyScreen   provider={selProvider} inputText={formInput} />;
-    if (screen==='model')    return <ModelScreen    provider={selProvider} menuIndex={menuIndex} inputText={formInput} />;
+    if (screen==='model')    return <ModelScreen    provider={selProvider} menuIndex={menuIndex} inputText={formInput} ollamaModels={ollamaModels} />;
 
     const isWorking  = status !== 'idle';
     const spinner    = SPINNERS[spinFrame];
@@ -726,54 +704,29 @@ const App = ({ config: initCfg }) => {
     const tokenStr   = totalTokens > 0 ? ` · ↓ ${totalTokens} tokens` : '';
     const CONFIRM_OPTS = ['Yes', "Yes, allow all for this session", 'No'];
 
-
-
-    // Calcular cuánto espacio ocupa el banner + header + footer
-    // Aprox 12 líneas. Depende de si hay un comando slash abierto, confirmaciones, etc.
-    // Usaremos un Box contenedor de todo el alto de la terminal y overflow='hidden'
-    // cortando el array de history para que no desborde.
-
-    // Contamos cuantas lineas ocupa el historial y herramientas activas
-    const getLines = (msg) => {
-        if (msg.type === 'tool') return 3;
-        if (msg.text) return msg.text.split('\n').length + 2;
-        return 2;
-    };
-
-    let currentLines = 0;
-    const maxLines = Math.max(1, rows - 15); // reservamos ~15 lineas para banner, prompt y footer
-    const visibleHistory = [];
-
-    for (let i = history.length - 1; i >= 0; i--) {
-        const itemLines = getLines(history[i]);
-        if (currentLines + itemLines > maxLines && visibleHistory.length > 0) break;
-        currentLines += itemLines;
-        visibleHistory.unshift({ ...history[i], origIndex: i });
-    }
-
     return (
-        <Box flexDirection="column" height={rows} overflow="hidden">
-
-            {/* Welcome box – SIEMPRE visible y anclado arriba */}
+        <Box flexDirection="column">
+            {/* Solo mostramos el WelcomeBox al inicio, luego Static lo empujará arriba */}
             <WelcomeBox
                 provider={selProvider?.label || cfg.current.provider || 'provider'}
                 model={selModel || cfg.current.model || 'model'}
             />
 
-            {/* Contenedor del chat con espacio sobrante, flex-end empuja contenido hacia abajo */}
-            <Box flexDirection="column" justifyContent="flex-end" flexGrow={1} overflow="hidden">
-                {visibleHistory.map((item) => {
-                    const i = item.origIndex;
-                    if (item.type==='user')      return <UserMessage      key={i} text={item.text} />;
-                    if (item.type==='assistant') return <AssistantMessage key={i} text={item.text} />;
+            <Static items={staticHistory}>
+                {(item, index) => {
+                    if (item.type==='user')      return <UserMessage      key={index} text={item.text} />;
+                    if (item.type==='assistant') return <AssistantMessage key={index} text={item.text} />;
                     if (item.type==='tool')      return (
-                        <Box key={i} marginTop={1}>
+                        <Box key={index} marginTop={1}>
                             <ToolLine name={item.name} input={item.input} output={item.output} running={false} />
                         </Box>
                     );
                     return null;
-                })}
+                }}
+            </Static>
 
+            {/* Parte activa (no estática) que siempre está al final */}
+            <Box flexDirection="column">
                 {/* Herramienta activa */}
                 {activeTool && (
                     <Box marginTop={1}>
@@ -789,43 +742,43 @@ const App = ({ config: initCfg }) => {
                         <Text color="gray">{timeStr}{tokenStr}</Text>
                     </Box>
                 )}
-            </Box>
 
-            {/* Confirmación */}
-            {pendingConfirm && (
-                <ConfirmDialog
-                    toolName={pendingConfirm.toolName}
-                    detail={pendingConfirm.detail}
-                    options={CONFIRM_OPTS}
-                    selectedIndex={confirmIdx}
-                />
-            )}
+                {/* Confirmación */}
+                {pendingConfirm && (
+                    <ConfirmDialog
+                        toolName={pendingConfirm.toolName}
+                        detail={pendingConfirm.detail}
+                        options={CONFIRM_OPTS}
+                        selectedIndex={confirmIdx}
+                    />
+                )}
 
-            {/* Prompt */}
-            {!pendingConfirm && (
-                <Box marginTop={1} flexDirection="column">
-                    <HR />
-                    <Box>
-                        <Text color={isWorking?'gray':'cyan'}>❯ </Text>
-                        <Text>{input}</Text>
-                        <Text color={isWorking?'gray':'white'}>█</Text>
+                {/* Prompt */}
+                {!pendingConfirm && (
+                    <Box marginTop={1} flexDirection="column">
+                        <HR />
+                        <Box>
+                            <Text color={isWorking?'gray':'cyan'}>❯ </Text>
+                            <Text>{input}</Text>
+                            <Text color={isWorking?'gray':'white'}>█</Text>
+                        </Box>
+                        <HR />
                     </Box>
-                    <HR />
-                </Box>
-            )}
+                )}
 
-            {/* Footer */}
-            {!pendingConfirm && isWorking && <Text color="gray">  esc to interrupt</Text>}
-            {!pendingConfirm && !isWorking && input==='?' && <ShortcutsHelp />}
-            {!pendingConfirm && !isWorking && input.startsWith('/') && <CommandMenu input={input} selectedIndex={cmdIndex} />}
-            {!pendingConfirm && !isWorking && input!=='?' && !input.startsWith('/') && (
-                <Box>
-                    <Text color="gray">  ? for shortcuts</Text>
-                    <Text color="gray">{' '.repeat(40)}</Text>
-                    <Text color="white">●</Text>
-                    <Text color="gray"> high · /effort</Text>
-                </Box>
-            )}
+                {/* Footer */}
+                {!pendingConfirm && isWorking && <Text color="gray">  esc to interrupt</Text>}
+                {!pendingConfirm && !isWorking && input==='?' && <ShortcutsHelp />}
+                {!pendingConfirm && !isWorking && input.startsWith('/') && <CommandMenu input={input} selectedIndex={cmdIndex} />}
+                {!pendingConfirm && !isWorking && input!=='?' && !input.startsWith('/') && (
+                    <Box>
+                        <Text color="gray">  ? for shortcuts</Text>
+                        <Text color="gray">{' '.repeat(40)}</Text>
+                        <Text color="white">●</Text>
+                        <Text color="gray"> high · /effort</Text>
+                    </Box>
+                )}
+            </Box>
 
         </Box>
     );
