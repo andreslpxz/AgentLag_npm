@@ -25,3 +25,13 @@ export function fetchOllamaModels(baseUrl = 'http://localhost:11434') {
         });
     });
 }
+
+export function isOllamaRunning(baseUrl = 'http://localhost:11434') {
+    return new Promise((resolve) => {
+        const req = http.get(baseUrl, (res) => {
+            resolve(true);
+        });
+        req.on('error', () => resolve(false));
+        req.setTimeout(2000, () => { req.destroy(); resolve(false); });
+    });
+}
