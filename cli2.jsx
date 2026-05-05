@@ -12,7 +12,8 @@ import os from 'os';
 // ─── Persistencia ~/.agentlag/ ────────────────────────────────────────────────
 const CONFIG_DIR  = path.join(os.homedir(), '.agentlag');
 const CONFIG_FILE = path.join(CONFIG_DIR, 'config.json');
-const SESSION_FILE = path.join(process.cwd(), '.agentlag_history.json');
+const PROJECT_SESSION_DIR = path.join(process.cwd(), '.agentlag', 'conversations');
+const LEGACY_SESSION_FILE = path.join(process.cwd(), '.agentlag_history.json');
 
 function ensureDir() {
     if (!fs.existsSync(CONFIG_DIR)) fs.mkdirSync(CONFIG_DIR, { recursive: true });
@@ -24,12 +25,95 @@ function saveConfig(data) {
     ensureDir();
     fs.writeFileSync(CONFIG_FILE, JSON.stringify(data, null, 2));
 }
-function loadSession() {
-    try { return JSON.parse(fs.readFileSync(SESSION_FILE, 'utf8')); } catch { return { history: [] }; }
+
+function ensureProjectSessionDir() {
+    if (!fs.existsSync(PROJECT_SESSION_DIR)) fs.mkdirSync(PROJECT_SESSION_DIR, { recursive: true });
 }
-function saveSession(history) {
-    const toSave = history.filter(m => m.type === 'user' || m.type === 'assistant');
-    fs.writeFileSync(SESSION_FILE, JSON.stringify({ history: toSave }, null, 2));
+
+function normalizeConversationName(name) {
+    return (name || '')
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^a-zA-Z0-9._-]+/g, '-')
+        .replace(/^-+|-+$/g, '')
+        .toLowerCase();
+}
+
+function conversationFile(name) {
+    const normalized = normalizeConversationName(name);
+    return normalized ? path.join(PROJECT_SESSION_DIR, `${normalized}.json`) : null;
+}
+
+function listConversations() {
+    try {
+        return fs.readdirSync(PROJECT_SESSION_DIR)
+            .filter(f => f.endsWith('.json') && f !== 'latest.json')
+            .map(f => path.basename(f, '.json'))
+            .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+    } catch {
+        return [];
+    }
+}
+
+function nextConversationName() {
+    const nums = listConversations()
+        .map(n => n.match(/^conversacion(\d+)$/)?.[1])
+        .filter(Boolean)
+        .map(Number);
+    return `conversacion${nums.length ? Math.max(...nums) + 1 : 1}`;
+}
+
+function legacySession() {
+    try {
+        const data = JSON.parse(fs.readFileSync(LEGACY_SESSION_FILE, 'utf8'));
+        return data.history?.length ? { name: 'legacy', history: data.history } : null;
+    } catch {
+        return null;
+    }
+}
+
+function loadSession(name) {
+    const requested = normalizeConversationName(name);
+    const candidates = [];
+
+    if (requested) candidates.push(conversationFile(requested));
+    else candidates.push(conversationFile('latest'), LEGACY_SESSION_FILE);
+
+    for (const file of candidates.filter(Boolean)) {
+        try {
+            const data = JSON.parse(fs.readFileSync(file, 'utf8'));
+            if (data.history?.length) return { name: data.name || requested || 'latest', history: data.history };
+        } catch {}
+    }
+
+    if (requested) return null;
+    return legacySession() || { history: [] };
+}
+
+function saveSession(history, currentName) {
+    const toSave = history.filter(m => (m.type === 'user' || m.type === 'assistant') && !m.ephemeral);
+    if (!toSave.length) return null;
+
+    ensureProjectSessionDir();
+    const name = normalizeConversationName(currentName) || nextConversationName();
+    const payload = {
+        name,
+        cwd: process.cwd(),
+        savedAt: new Date().toISOString(),
+        history: toSave,
+    };
+
+    fs.writeFileSync(conversationFile(name), JSON.stringify(payload, null, 2));
+    fs.writeFileSync(conversationFile('latest'), JSON.stringify(payload, null, 2));
+    try { fs.writeFileSync(LEGACY_SESSION_FILE, JSON.stringify({ history: toSave }, null, 2)); } catch {}
+    return payload;
+}
+
+function clearLatestSession() {
+    ensureProjectSessionDir();
+    const payload = { name: 'latest', cwd: process.cwd(), savedAt: new Date().toISOString(), history: [] };
+    fs.writeFileSync(conversationFile('latest'), JSON.stringify(payload, null, 2));
+    try { fs.writeFileSync(LEGACY_SESSION_FILE, JSON.stringify({ history: [] }, null, 2)); } catch {}
 }
 
 // ─── Constantes ───────────────────────────────────────────────────────────────
@@ -335,7 +419,7 @@ const SLASH_COMMANDS = [
     { cmd:'/branch',   desc:['Create a branch of the current','conversation at this point'] },
     { cmd:'/clear',    desc:['Clear conversation history'] },
     { cmd:'/download', desc:['Download HF model via huggingface-cli','e importar a Ollama'] },
-    { cmd:'/import',   desc:['Import history from current project'] },
+    { cmd:'/import',   desc:['Import conversation by name','example: /import conversación1'] },
     { cmd:'/help',     desc:['Show all available commands'] },
 ];
 
@@ -404,6 +488,8 @@ const App = ({ config: initCfg }) => {
     const [totalTokens, setTotalTokens]   = useState(0);
     const [staticHistory, setStaticHistory] = useState([]);
     const msgRef = useRef([]);
+    const historyRef = useRef([]);
+    const currentConversationRef = useRef(null);
     const [agent, setAgent] = useState(null);
 
     // Nuevos estados para atajos
@@ -421,6 +507,30 @@ const App = ({ config: initCfg }) => {
         stdout.on('resize', h);
         return () => stdout.off('resize', h);
     }, [stdout]);
+
+    useEffect(() => {
+        historyRef.current = staticHistory;
+        const saved = saveSession(staticHistory, currentConversationRef.current);
+        if (saved?.name) currentConversationRef.current = saved.name;
+    }, [staticHistory]);
+
+    const saveAndExit = useCallback(() => {
+        saveSession(historyRef.current, currentConversationRef.current);
+        process.exit();
+    }, []);
+
+    useEffect(() => {
+        const onExit = () => saveSession(historyRef.current, currentConversationRef.current);
+        const onSignal = () => saveAndExit();
+        process.on('exit', onExit);
+        process.on('SIGINT', onSignal);
+        process.on('SIGTERM', onSignal);
+        return () => {
+            process.off('exit', onExit);
+            process.off('SIGINT', onSignal);
+            process.off('SIGTERM', onSignal);
+        };
+    }, [saveAndExit]);
 
     // ── Ciclos ────────────────────────────────────────────────────────────────
     useEffect(() => {
@@ -463,7 +573,7 @@ const App = ({ config: initCfg }) => {
 
     // ── Input ─────────────────────────────────────────────────────────────────
     useInput((str, key) => {
-        if (key.ctrl && str === 'c') process.exit();
+        if (key.ctrl && str === 'c') saveAndExit();
 
         if (screen === 'color') {
             if (key.upArrow)   setMenuIndex(i => Math.max(0, i-1));
@@ -478,7 +588,7 @@ const App = ({ config: initCfg }) => {
         if (screen === 'trust') {
             if (key.upArrow)   setMenuIndex(i => Math.max(0, i-1));
             if (key.downArrow) setMenuIndex(i => Math.min(1, i+1));
-            if (key.escape || (key.return && menuIndex===1)) process.exit();
+            if (key.escape || (key.return && menuIndex===1)) saveAndExit();
             if (key.return && menuIndex===0) {
                 const trustedDirs = cfg.current.trustedDirs || [];
                 if (!trustedDirs.includes(process.cwd())) trustedDirs.push(process.cwd());
@@ -670,7 +780,7 @@ const App = ({ config: initCfg }) => {
             if (key.escape) {
                 if (input === '') {
                     setStaticHistory(prev => prev.filter(i => i.type === 'welcome'));
-                    msgRef.current = []; saveSession([]);
+                    msgRef.current = []; currentConversationRef.current = null; clearLatestSession();
                 } else {
                     setInput(''); setCmdIndex(0);
                 }
@@ -721,7 +831,7 @@ const App = ({ config: initCfg }) => {
             }
             if (trimmed === '/clear') {
                 setStaticHistory(prev => prev.filter(i => i.type === 'welcome'));
-                msgRef.current = []; saveSession([]); setInput(''); return;
+                msgRef.current = []; currentConversationRef.current = null; clearLatestSession(); setInput(''); return;
             }
             if (trimmed === '/help') {
                 const helpText = SLASH_COMMANDS.map(c => `  ${c.cmd.padEnd(12)} - ${c.desc.join(' ')}`).join('\n');
@@ -778,16 +888,24 @@ const App = ({ config: initCfg }) => {
                 });
                 return;
             }
-            if (trimmed === '/import') {
-                const s = loadSession();
+            if (trimmed.startsWith('/import')) {
+                const importName = trimmed.replace(/^\/import\b/, '').trim();
+                const s = loadSession(importName);
                 if (s.history?.length) {
+                    currentConversationRef.current = s.name || normalizeConversationName(importName) || currentConversationRef.current;
                     msgRef.current = s.history.map(m =>
                         m.type === 'user' ? new HumanMessage(m.text) : new AIMessage(m.text)
                     );
-                    setStaticHistory(s.history);
-                    setStaticHistory(prev => [...prev, { type:'assistant', text:'✅ Historial importado correctamente.' }]);
+                    const welcome = historyRef.current.find(i => i.type === 'welcome');
+                    setStaticHistory([
+                        ...(welcome ? [welcome] : []),
+                        ...s.history,
+                        { type:'assistant', text:`Historial importado: ${s.name || importName || 'latest'}.`, ephemeral:true },
+                    ]);
                 } else {
-                    setStaticHistory(prev => [...prev, { type:'assistant', text:'⚠️ No hay historial previo para importar en este proyecto.' }]);
+                    const available = listConversations();
+                    const suffix = available.length ? `\nDisponibles: ${available.join(', ')}` : '';
+                    setStaticHistory(prev => [...prev, { type:'assistant', text:`No hay historial para importar${importName ? `: ${importName}` : ' en este proyecto'}.${suffix}`, ephemeral:true }]);
                 }
                 setInput(''); return;
             }
