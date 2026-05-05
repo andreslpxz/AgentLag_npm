@@ -63,7 +63,7 @@ export const readFile = tool(
 // HERRAMIENTA: LISTAR DIRECTORIO
 // ─────────────────────────────────────────────
 export const listDirectory = tool(
-  async ({ dirPath, recursive }) => {
+  async ({ dirPath, recursive = false }) => {
     try {
       const cmd = recursive
         ? `find "${dirPath}" -not -path "*/node_modules/*" -not -path "*/.git/*" | head -100`
@@ -76,10 +76,64 @@ export const listDirectory = tool(
   },
   {
     name: "list_directory",
-    description: "Lista los archivos y carpetas de un directorio. Puede ser recursivo (omite node_modules y .git).",
+    description: "Lista los archivos y carpetas de un DIRECTORIO (no un archivo). Usa . para el directorio actual.",
     schema: z.object({
-      dirPath: z.string().describe("Ruta del directorio a listar"),
-      recursive: z.boolean().describe("true para listar recursivamente (omite node_modules), false para solo el nivel actual"),
+      dirPath: z.string().describe("Ruta del DIRECTORIO a listar (ej: '.', '/home', 'src'). NO pases un archivo."),
+      recursive: z.boolean().optional().default(false).describe("true para listar recursivamente"),
+    }),
+  }
+);
+
+// ─────────────────────────────────────────────
+// HERRAMIENTA: EDITAR ARCHIVO (BUSCAR Y REEMPLAZAR)
+// ─────────────────────────────────────────────
+export const editFile = tool(
+  async ({ filePath, oldText, newText }) => {
+    try {
+      const content = await fs.readFile(filePath, "utf8");
+      if (!content.includes(oldText)) {
+        return `❌ No se encontró el texto a reemplazar en ${filePath}. Usa read_file primero para ver el contenido exacto.`;
+      }
+      const updated = content.replace(oldText, newText);
+      await fs.writeFile(filePath, updated, "utf8");
+      return `✅ Archivo editado: ${filePath}\n   Reemplazado ${oldText.split('\n').length} línea(s).`;
+    } catch (error) {
+      return `❌ Error al editar: ${error.message}`;
+    }
+  },
+  {
+    name: "edit_file",
+    description: "Edita un archivo reemplazando texto existente. Primero usa read_file para ver el contenido exacto, luego usa esta herramienta para hacer cambios quirúrgicos sin reescribir todo el archivo.",
+    schema: z.object({
+      filePath: z.string().describe("Ruta del archivo a editar"),
+      oldText: z.string().describe("Texto EXACTO que existe en el archivo y será reemplazado"),
+      newText: z.string().describe("Nuevo texto que reemplazará al antiguo"),
+    }),
+  }
+);
+
+// ─────────────────────────────────────────────
+// HERRAMIENTA: BUSCAR EN ARCHIVOS (GREP)
+// ─────────────────────────────────────────────
+export const searchFiles = tool(
+  async ({ pattern, dirPath = ".", fileGlob }) => {
+    try {
+      let cmd = `grep -rn --include='${fileGlob || '*'}' "${pattern}" "${dirPath}" 2>/dev/null | head -50`;
+      const { stdout, stderr } = await execPromise(cmd, { timeout: 15000 });
+      if (!stdout.trim()) return `⚠️ No se encontraron coincidencias para "${pattern}".`;
+      return `🔍 Resultados para "${pattern}":\n${stdout}`;
+    } catch (error) {
+      if (error.code === 1) return `⚠️ No se encontraron coincidencias para "${pattern}".`;
+      return `❌ Error al buscar: ${error.message}`;
+    }
+  },
+  {
+    name: "search_files",
+    description: "Busca un patrón de texto en archivos del proyecto (como grep). Útil para encontrar funciones, variables, imports, o cualquier texto en el código.",
+    schema: z.object({
+      pattern: z.string().describe("Texto o regex a buscar"),
+      dirPath: z.string().optional().default(".").describe("Directorio donde buscar (default: directorio actual)"),
+      fileGlob: z.string().optional().describe("Filtrar por tipo de archivo (ej: '*.js', '*.py', '*.jsx')"),
     }),
   }
 );
@@ -164,4 +218,4 @@ export const webSearch = tool(
 // ─────────────────────────────────────────────
 // EXPORTAR TODAS LAS HERRAMIENTAS
 // ─────────────────────────────────────────────
-export const tools = [createFile, readFile, listDirectory, runShell, webSearch];
+export const tools = [createFile, readFile, editFile, listDirectory, searchFiles, runShell, webSearch];

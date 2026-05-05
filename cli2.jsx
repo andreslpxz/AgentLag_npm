@@ -35,8 +35,8 @@ function saveSession(history) {
 // ─── Constantes ───────────────────────────────────────────────────────────────
 const SPINNERS       = ['✻', '✼', '✽', '✾', '✿'];
 const THINKING_WORDS = ['Thinking','Reasoning','Analyzing','Computing','Marinating','Levitating','Pondering','Brewing'];
-const TOOL_ICONS     = { create_file:'●', read_file:'●', list_directory:'●', run_shell:'●', web_search:'●' };
-const NEEDS_CONFIRM  = new Set(['run_shell', 'create_file']);
+const TOOL_ICONS     = { create_file:'●', read_file:'●', edit_file:'●', list_directory:'●', search_files:'●', run_shell:'●', web_search:'●' };
+const NEEDS_CONFIRM  = new Set(['run_shell', 'create_file', 'edit_file']);
 
 const toolLabel = (n) => n?.replace(/_/g, ' ') ?? 'tool';
 const randWord  = () => THINKING_WORDS[Math.floor(Math.random() * THINKING_WORDS.length)];
@@ -555,7 +555,7 @@ const App = ({ config: initCfg }) => {
                     setDlStatus('Descargando desde HuggingFace...');
                     setScreen('downloading');
 
-                    const dlProc = spawn('huggingface-cli', ['download', hfRepo], {
+                    const dlProc = spawn('python3', ['-m', 'huggingface_hub.commands.huggingface_cli', 'download', hfRepo], {
                         stdio: ['ignore', 'pipe', 'pipe'],
                         env: { ...process.env, HF_HUB_ENABLE_HF_TRANSFER: '1' },
                     });
@@ -614,7 +614,7 @@ const App = ({ config: initCfg }) => {
                         });
                     });
                     dlProc.on('error', err => {
-                        setDlStatus(`huggingface-cli no encontrado. Instala: pip install huggingface-hub`);
+                        setDlStatus(`python3 no encontrado. Instala: pip install huggingface-hub`);
                         setTimeout(() => { setFormInput(''); setScreen('model'); }, 4000);
                     });
                     return;
@@ -740,7 +740,7 @@ const App = ({ config: initCfg }) => {
                 }
                 setStaticHistory(prev => [...prev, { type:'assistant', text:`⏳ Descargando modelo: ${modelName}\n   via huggingface-cli download\n   Esto puede tardar varios minutos...` }]);
                 setInput('');
-                const dlProc = spawn('huggingface-cli', ['download', modelName], {
+                const dlProc = spawn('python3', ['-m', 'huggingface_hub.commands.huggingface_cli', 'download', modelName], {
                     stdio: ['ignore', 'pipe', 'pipe'],
                     env: { ...process.env, HF_HUB_ENABLE_HF_TRANSFER: '1' },
                 });
@@ -774,7 +774,7 @@ const App = ({ config: initCfg }) => {
                     });
                 });
                 dlProc.on('error', () => {
-                    setStaticHistory(prev => [...prev, { type:'assistant', text:`❌ huggingface-cli no encontrado.\nInstala con: pip install huggingface-hub` }]);
+                    setStaticHistory(prev => [...prev, { type:'assistant', text:`❌ python3 o huggingface-hub no encontrado.\nInstala con: pip install huggingface-hub` }]);
                 });
                 return;
             }
