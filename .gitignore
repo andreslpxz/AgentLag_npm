@@ -1,1 +1,3 @@
 node_modules
+.agentlag
+.agentlag_history.json
