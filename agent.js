@@ -137,11 +137,13 @@ function buildSystemPrompt(provider, model) {
 Corres en Termux (Android/Linux). Modelo activo: ${model} (${provider}).
 
 🛠️ HERRAMIENTAS DISPONIBLES:
-- create_file   → Crea o sobreescribe archivos con contenido completo.
-- read_file     → Lee el contenido de un archivo con números de línea.
-- list_directory → Lista archivos y carpetas (puede ser recursivo, omite node_modules/.git).
-- run_shell     → Ejecuta cualquier comando en la terminal (npm, git, python, bash, etc.).
-- web_search    → Busca en internet (Tavily AI) — resultados reales y actualizados.
+- create_file    → Crea o sobreescribe archivos con contenido completo.
+- read_file      → Lee el contenido de un archivo con números de línea.
+- edit_file      → Edita un archivo reemplazando texto existente (search & replace).
+- list_directory → Lista archivos de un DIRECTORIO (no un archivo). Usa '.' para el dir actual.
+- search_files   → Busca texto/regex en archivos del proyecto (como grep).
+- run_shell      → Ejecuta cualquier comando en la terminal (npm, git, python, bash, etc.).
+- web_search     → Busca en internet (Tavily AI) — resultados reales y actualizados.
 
 📋 REGLAS DE COMPORTAMIENTO:
 - Antes de usar una herramienta, explica brevemente qué vas a hacer.
@@ -188,13 +190,19 @@ Action Input: {"param1": "valor1", "param2": "valor2"}
 Después de recibir el resultado (Observation), continúa razonando.
 Cuando tengas la respuesta final y NO necesites más herramientas, responde normalmente SIN usar el formato Action/Action Input.
 
+⚠️ REGLAS CRÍTICAS:
+- NUNCA repitas la misma acción si ya falló. Cambia de estrategia o responde sin herramientas.
+- Si una herramienta falla 2 veces, NO la uses de nuevo. Da tu respuesta final.
+- list_directory necesita un DIRECTORIO (ej: '.', 'src'), NO un archivo. Usa '.' para el dir actual.
+- Máximo 15 pasos por respuesta. Si necesitas más, da un resumen y pregunta si continuar.
+- El JSON de Action Input debe ser válido y estar en una sola línea.
+
 📋 REGLAS DE COMPORTAMIENTO:
 - Antes de usar una herramienta, explica brevemente qué vas a hacer en Thought.
 - Si algo falla, analiza el error y propón alternativas concretas.
 - Al terminar una tarea, haz un resumen breve de lo que hiciste.
 - Responde SIEMPRE en el idioma que use el usuario.
 - Sé preciso y conciso. Evita repeticiones innecesarias.
-- IMPORTANTE: El JSON de Action Input debe ser válido y estar en una sola línea.
 
 🎯 ESPECIALIDADES:
 - Node.js, npm, LangChain/LangGraph, React, Python
@@ -320,6 +328,8 @@ export async function buildAgent(overrides = {}) {
 }
 
 // ─── ReAct Graph (para modelos sin soporte de tools) ──────────────────────────
+const MAX_REACT_ITERATIONS = 15;
+
 function buildReActGraph(llm, provider, model) {
     const reactPrompt = buildReActSystemPrompt(provider, model);
 
@@ -328,7 +338,21 @@ function buildReActGraph(llm, provider, model) {
         toolMap[t.name] = t;
     }
 
+    let iterationCount = 0;
+    let errorTracker = {};
+
     const callModelReAct = async (state) => {
+        iterationCount++;
+
+        // Límite de iteraciones para evitar loops infinitos
+        if (iterationCount > MAX_REACT_ITERATIONS) {
+            iterationCount = 0;
+            errorTracker = {};
+            return { messages: [new AIMessage({
+                content: "He alcanzado el límite de pasos. Aquí está lo que logré hacer hasta ahora. ¿Necesitas que continúe con algo específico?"
+            })] };
+        }
+
         // Convertir ToolMessages a observaciones legibles por el modelo
         const processedMessages = state.messages.map(m => {
             if (m instanceof ToolMessage) {
@@ -337,11 +361,24 @@ function buildReActGraph(llm, provider, model) {
             return m;
         });
 
+        // Si hay errores repetidos, agregar advertencia
+        const repeatedErrors = Object.entries(errorTracker)
+            .filter(([, count]) => count >= 2)
+            .map(([key]) => key);
+        if (repeatedErrors.length > 0) {
+            processedMessages.push(new HumanMessage(
+                `ADVERTENCIA: Las siguientes herramientas han fallado múltiples veces: ${repeatedErrors.join(', ')}. NO las vuelvas a usar de la misma forma. Cambia de estrategia o da tu respuesta final SIN usar herramientas.`
+            ));
+        }
+
         const messages = [reactPrompt, ...processedMessages];
         const response = await llm.invoke(messages);
 
         const toolCall = parseToolCall(response.content);
         if (toolCall) {
+            // Trackear errores repetidos
+            const callKey = `${toolCall.name}(${JSON.stringify(toolCall.args)})`;
+
             const aiMsg = new AIMessage({
                 content: response.content,
                 tool_calls: [{
@@ -353,21 +390,53 @@ function buildReActGraph(llm, provider, model) {
             return { messages: [aiMsg] };
         }
 
-        // Respuesta final — limpiar formato ReAct
+        // Respuesta final — limpiar formato ReAct y resetear contadores
+        iterationCount = 0;
+        errorTracker = {};
         const cleaned = cleanReActResponse(response.content);
         return { messages: [new AIMessage({ content: cleaned })] };
     };
 
-    const toolNode = new ToolNode(tools);
+    // ToolNode con tracking de errores
+    const originalToolNode = new ToolNode(tools);
+    const trackedToolNode = async (state) => {
+        const result = await originalToolNode.invoke(state);
+        // Verificar si el último tool message contiene error
+        const msgs = result.messages || [];
+        for (const m of msgs) {
+            if (m instanceof ToolMessage && m.content && typeof m.content === 'string') {
+                if (m.content.includes('❌') || m.content.includes('Error')) {
+                    const toolCallId = m.tool_call_id;
+                    // Buscar el tool call que lo provocó
+                    const lastAiMsg = state.messages.findLast(msg => msg.tool_calls?.length > 0);
+                    if (lastAiMsg) {
+                        const call = lastAiMsg.tool_calls.find(tc => tc.id === toolCallId);
+                        if (call) {
+                            const callKey = `${call.name}`;
+                            errorTracker[callKey] = (errorTracker[callKey] || 0) + 1;
+                        }
+                    }
+                }
+            }
+        }
+        return result;
+    };
 
     const workflow = new StateGraph(AgentState)
         .addNode("agent", callModelReAct)
-        .addNode("tools", toolNode)
+        .addNode("tools", trackedToolNode)
         .addEdge(START, "agent")
         .addConditionalEdges("agent", toolsCondition)
         .addEdge("tools", "agent");
 
     const compiled = workflow.compile();
     compiled._agentMode = 'react';
+    // Reset counters for each new invocation
+    const originalInvoke = compiled.invoke.bind(compiled);
+    compiled.invoke = async (...args) => {
+        iterationCount = 0;
+        errorTracker = {};
+        return originalInvoke(...args);
+    };
     return compiled;
 }
