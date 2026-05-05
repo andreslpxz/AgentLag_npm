@@ -205,6 +205,17 @@ Cuando tengas la respuesta final y NO necesites más herramientas, responde norm
     );
 }
 
+// ─── Limpiar respuesta ReAct para el usuario ─────────────────────────────────
+function cleanReActResponse(text) {
+    if (!text || typeof text !== 'string') return text;
+    let cleaned = text
+        .replace(/^Thought:\s*/im, '')
+        .replace(/\nThought:\s*/gm, '\n')
+        .replace(/\nAction:[\s\S]*$/i, '')
+        .trim();
+    return cleaned || text;
+}
+
 // ─── Parsear tool call desde texto ReAct ──────────────────────────────────────
 function parseToolCall(text) {
     if (!text || typeof text !== 'string') return null;
@@ -324,7 +335,9 @@ function buildReActGraph(llm, provider, model) {
             return { messages: [aiMsg] };
         }
 
-        return { messages: [response] };
+        // Respuesta final — limpiar formato ReAct
+        const cleaned = cleanReActResponse(response.content);
+        return { messages: [new AIMessage({ content: cleaned })] };
     };
 
     const toolNode = new ToolNode(tools);
