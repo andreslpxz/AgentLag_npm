@@ -4,6 +4,7 @@ import { render, Text, Box, useInput, Static, Newline, useStdout } from 'ink';
 import { buildAgent } from './agent.js';
 import { fetchOllamaModels, isOllamaRunning, fetchTogetherModels } from './ollama_utils.js';
 import { HumanMessage, AIMessage } from '@langchain/core/messages';
+import { spawn } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
@@ -219,18 +220,19 @@ const ProviderScreen = ({ menuIndex }) => (
     </Box>
 );
 
-const ApiKeyScreen = ({ provider, inputText }) => (
+const ApiKeyScreen = ({ provider, inputText, showError }) => (
     <Box flexDirection="column" paddingX={1} paddingY={1}>
         <AgentLogo /><Newline />
         <Text color="gray">{'─'.repeat(69)}</Text>
         <Text bold> Enter API Key for <Text color="#00FF87">{provider?.label}</Text></Text><Newline />
         <Text color="gray"> {provider?.id==='ollama' ? 'No key needed for local Ollama' : 'Your key is stored locally in ~/.agentlag/config.json'}</Text>
         <Newline />
-        <Box borderStyle="single" borderColor="cyan" paddingX={1}>
+        <Box borderStyle="single" borderColor={showError ? 'red' : 'cyan'} paddingX={1}>
             <Text color="gray">Key: </Text>
             <Text>{provider?.id==='ollama' ? 'Local' : '*'.repeat(inputText.length)}</Text>
             <Text color="white">█</Text>
         </Box>
+        {showError && <Text color="red"> ⚠ API key es requerida para {provider?.label}</Text>}
         <Newline />
         <Text color="gray"> Enter to confirm · Esc to go back</Text>
         <Text color="gray">{'╌'.repeat(69)}</Text>
@@ -320,6 +322,7 @@ const SLASH_COMMANDS = [
     { cmd:'/agents',   desc:['Manage agent configurations'] },
     { cmd:'/branch',   desc:['Create a branch of the current','conversation at this point'] },
     { cmd:'/clear',    desc:['Clear conversation history'] },
+    { cmd:'/download', desc:['Download HF model for local use','ollama pull hf.co/org/model'] },
     { cmd:'/import',   desc:['Import history from current project'] },
     { cmd:'/help',     desc:['Show all available commands'] },
 ];
@@ -368,6 +371,7 @@ const App = ({ config: initCfg }) => {
     const [togetherStatus, setTogetherStatus] = useState('idle'); // 'idle' | 'fetching' | 'loaded' | 'error'
     const [menuIndex, setMenuIndex]       = useState(0);
     const [formInput, setFormInput]       = useState('');
+    const [apiKeyError, setApiKeyError]   = useState(false);
     const [selProvider, setSelProvider]   = useState(
         initCfg.provider ? PROVIDERS.find(p => p.id === initCfg.provider) : null
     );
@@ -497,9 +501,14 @@ const App = ({ config: initCfg }) => {
             return;
         }
         if (screen === 'apikey') {
-            if (key.escape) { setScreen('provider'); setFormInput(''); return; }
+            if (key.escape) { setScreen('provider'); setFormInput(''); setApiKeyError(false); return; }
             if (key.return) {
                 const apiKey = selProvider?.id==='ollama' ? 'ollama' : formInput.trim();
+                if (selProvider?.id !== 'ollama' && !apiKey) {
+                    setApiKeyError(true);
+                    return;
+                }
+                setApiKeyError(false);
                 cfg.current = { ...cfg.current, provider:selProvider.id, apiKey };
                 saveConfig(cfg.current);
                 if (selProvider?.id === 'together' && apiKey) {
@@ -644,6 +653,32 @@ const App = ({ config: initCfg }) => {
             if (trimmed.startsWith('/btw')) {
                 setStaticHistory(prev => [...prev, { type: 'assistant', text: '📝 Modo nota / side question activo...' }]);
                 setInput(''); return;
+            }
+            if (trimmed.startsWith('/download')) {
+                const modelName = trimmed.replace('/download', '').trim();
+                if (!modelName) {
+                    setStaticHistory(prev => [...prev, { type:'assistant', text:'Uso: /download org/modelo\nEjemplo: /download inclusionai/ling-2.6-1t\n\nDescarga un modelo de HuggingFace para uso local con Ollama.' }]);
+                    setInput(''); return;
+                }
+                const hfModel = modelName.startsWith('hf.co/') ? modelName : `hf.co/${modelName}`;
+                setStaticHistory(prev => [...prev, { type:'assistant', text:`⏳ Descargando modelo: ${hfModel}\n   Ejecutando: ollama pull ${hfModel}\n   Esto puede tardar varios minutos...` }]);
+                setInput('');
+                const proc = spawn('ollama', ['pull', hfModel], { stdio: ['ignore', 'pipe', 'pipe'] });
+                let output = '';
+                proc.stdout.on('data', d => { output += d.toString(); });
+                proc.stderr.on('data', d => { output += d.toString(); });
+                proc.on('close', code => {
+                    if (code === 0) {
+                        setStaticHistory(prev => [...prev, { type:'assistant', text:`✅ Modelo descargado: ${modelName}\n\nPara usarlo, selecciona Ollama como proveedor (/config) y elige el modelo.` }]);
+                    } else {
+                        const errMsg = output.trim() || `Código de salida: ${code}`;
+                        setStaticHistory(prev => [...prev, { type:'assistant', text:`❌ Error al descargar: ${errMsg}\n\nAsegúrate de que Ollama está corriendo (ollama serve) y el nombre del modelo es correcto.` }]);
+                    }
+                });
+                proc.on('error', err => {
+                    setStaticHistory(prev => [...prev, { type:'assistant', text:`❌ No se pudo ejecutar ollama: ${err.message}\n\nAsegúrate de que Ollama está instalado.` }]);
+                });
+                return;
             }
             if (trimmed === '/import') {
                 const s = loadSession();
@@ -859,7 +894,7 @@ const App = ({ config: initCfg }) => {
     if (screen==='color')    return <ColorScreen    menuIndex={menuIndex} />;
     if (screen==='trust')    return <TrustScreen    menuIndex={menuIndex} />;
     if (screen==='provider') return <ProviderScreen menuIndex={menuIndex} />;
-    if (screen==='apikey')   return <ApiKeyScreen   provider={selProvider} inputText={formInput} />;
+    if (screen==='apikey')   return <ApiKeyScreen   provider={selProvider} inputText={formInput} showError={apiKeyError} />;
     if (screen==='model')    return <ModelScreen    provider={selProvider} menuIndex={menuIndex} inputText={formInput} ollamaModels={ollamaModels} ollamaStatus={ollamaStatus} togetherModels={togetherModels} togetherStatus={togetherStatus} />;
 
     const isWorking  = status !== 'idle';
