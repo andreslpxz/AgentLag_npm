@@ -334,7 +334,7 @@ const SLASH_COMMANDS = [
     { cmd:'/agents',   desc:['Manage agent configurations'] },
     { cmd:'/branch',   desc:['Create a branch of the current','conversation at this point'] },
     { cmd:'/clear',    desc:['Clear conversation history'] },
-    { cmd:'/download', desc:['Download HF model for local use','ollama pull hf.co/org/model'] },
+    { cmd:'/download', desc:['Download HF model via huggingface-cli','e importar a Ollama'] },
     { cmd:'/import',   desc:['Import history from current project'] },
     { cmd:'/help',     desc:['Show all available commands'] },
 ];
@@ -528,7 +528,7 @@ const App = ({ config: initCfg }) => {
                 return;
             }
             if (key.backspace||key.delete) { setFormInput(p=>p.slice(0,-1)); return; }
-            if (str && !key.ctrl && !key.meta && str.length===1) setFormInput(p=>p+str);
+            if (str && !key.ctrl && !key.meta) setFormInput(p=>p+str);
             return;
         }
         if (screen === 'downloading') {
@@ -550,38 +550,72 @@ const App = ({ config: initCfg }) => {
                 if (!model) return;
 
                 if (selProvider?.id === 'huggingface') {
-                    // Iniciar descarga via Ollama
-                    const hfModel = model.startsWith('hf.co/') ? model : `hf.co/${model}`;
+                    const hfRepo = model.replace(/^hf\.co\//, '');
                     setDlProgress(0);
-                    setDlStatus('Iniciando descarga...');
+                    setDlStatus('Descargando desde HuggingFace...');
                     setScreen('downloading');
-                    const proc = spawn('ollama', ['pull', hfModel], { stdio: ['ignore', 'pipe', 'pipe'] });
-                    let lastOutput = '';
-                    const parseProgress = (data) => {
-                        lastOutput = data.toString();
-                        const pctMatch = lastOutput.match(/(\d+)%/);
-                        if (pctMatch) setDlProgress(parseInt(pctMatch[1]));
-                        const statusLine = lastOutput.trim().split('\n').pop() || '';
-                        if (statusLine) setDlStatus(statusLine.substring(0, 60));
-                    };
-                    proc.stdout.on('data', parseProgress);
-                    proc.stderr.on('data', parseProgress);
-                    proc.on('close', code => {
-                        if (code === 0) {
-                            setDlProgress(100);
-                            setDlStatus('Descarga completada!');
-                            setSelModel(hfModel);
-                            cfg.current = { ...cfg.current, model: hfModel };
-                            saveConfig(cfg.current);
-                            setTimeout(() => { setFormInput(''); setScreen('main'); }, 1000);
-                        } else {
-                            setDlStatus(`Error (código ${code}). Verifica que Ollama esté corriendo.`);
-                            setTimeout(() => { setFormInput(''); setScreen('model'); }, 3000);
-                        }
+
+                    const dlProc = spawn('huggingface-cli', ['download', hfRepo], {
+                        stdio: ['ignore', 'pipe', 'pipe'],
+                        env: { ...process.env, HF_HUB_ENABLE_HF_TRANSFER: '1' },
                     });
-                    proc.on('error', err => {
-                        setDlStatus(`Error: ${err.message}. Instala Ollama primero.`);
-                        setTimeout(() => { setFormInput(''); setScreen('model'); }, 3000);
+                    let dlOutput = '';
+                    let cachePath = '';
+                    const parseDlProgress = (data) => {
+                        const text = data.toString();
+                        dlOutput += text;
+                        const pctMatch = text.match(/(\d+)%/);
+                        if (pctMatch) setDlProgress(Math.min(parseInt(pctMatch[1]), 90));
+                        const line = text.trim().split('\n').pop() || '';
+                        if (line) setDlStatus(line.substring(0, 60));
+                    };
+                    dlProc.stdout.on('data', d => { cachePath += d.toString(); parseDlProgress(d); });
+                    dlProc.stderr.on('data', parseDlProgress);
+                    dlProc.on('close', code => {
+                        if (code !== 0) {
+                            const errMsg = dlOutput.includes('not found')
+                                ? 'Modelo no encontrado en HuggingFace.'
+                                : `Error en descarga (código ${code}).`;
+                            setDlStatus(`${errMsg} Instala: pip install huggingface-hub`);
+                            setTimeout(() => { setFormInput(''); setScreen('model'); }, 4000);
+                            return;
+                        }
+                        setDlProgress(90);
+                        setDlStatus('Importando modelo a Ollama...');
+                        const modelDir = cachePath.trim();
+                        const modelName = hfRepo.replace(/\//g, '-').toLowerCase();
+
+                        // Crear Modelfile e importar a Ollama
+                        const modelfilePath = path.join(os.tmpdir(), `Modelfile_${Date.now()}`);
+                        fs.writeFileSync(modelfilePath, `FROM ${modelDir}\n`);
+                        const createProc = spawn('ollama', ['create', modelName, '-f', modelfilePath], {
+                            stdio: ['ignore', 'pipe', 'pipe'],
+                        });
+                        let createOutput = '';
+                        createProc.stdout.on('data', d => { createOutput += d.toString(); });
+                        createProc.stderr.on('data', d => {
+                            createOutput += d.toString();
+                            const line = d.toString().trim().split('\n').pop() || '';
+                            if (line) setDlStatus(line.substring(0, 60));
+                        });
+                        createProc.on('close', code2 => {
+                            try { fs.unlinkSync(modelfilePath); } catch {}
+                            if (code2 === 0) {
+                                setDlProgress(100);
+                                setDlStatus('Modelo listo!');
+                                setSelModel(modelName);
+                                cfg.current = { ...cfg.current, provider: 'ollama', model: modelName };
+                                saveConfig(cfg.current);
+                                setTimeout(() => { setFormInput(''); setScreen('main'); }, 1000);
+                            } else {
+                                setDlStatus(`Error al importar: ${createOutput.trim().substring(0, 50)}`);
+                                setTimeout(() => { setFormInput(''); setScreen('model'); }, 4000);
+                            }
+                        });
+                    });
+                    dlProc.on('error', err => {
+                        setDlStatus(`huggingface-cli no encontrado. Instala: pip install huggingface-hub`);
+                        setTimeout(() => { setFormInput(''); setScreen('model'); }, 4000);
                     });
                     return;
                 }
@@ -593,7 +627,7 @@ const App = ({ config: initCfg }) => {
                 return;
             }
             if (key.backspace||key.delete) { setFormInput(p=>p.slice(0,-1)); setMenuIndex(0); return; }
-            if (str && !key.ctrl && !key.meta && str.length===1) { setFormInput(p=>p+str); setMenuIndex(0); }
+            if (str && !key.ctrl && !key.meta) { setFormInput(p=>p+str); setMenuIndex(0); }
             return;
         }
 
@@ -699,28 +733,48 @@ const App = ({ config: initCfg }) => {
                 setInput(''); return;
             }
             if (trimmed.startsWith('/download')) {
-                const modelName = trimmed.replace('/download', '').trim();
+                const modelName = trimmed.replace('/download', '').trim().replace(/^hf\.co\//, '');
                 if (!modelName) {
-                    setStaticHistory(prev => [...prev, { type:'assistant', text:'Uso: /download org/modelo\nEjemplo: /download inclusionai/ling-2.6-1t\n\nDescarga un modelo de HuggingFace para uso local con Ollama.' }]);
+                    setStaticHistory(prev => [...prev, { type:'assistant', text:'Uso: /download org/modelo\nEjemplo: /download inclusionai/ling-2.6-1t\n\nDescarga un modelo de HuggingFace e importa a Ollama.' }]);
                     setInput(''); return;
                 }
-                const hfModel = modelName.startsWith('hf.co/') ? modelName : `hf.co/${modelName}`;
-                setStaticHistory(prev => [...prev, { type:'assistant', text:`⏳ Descargando modelo: ${hfModel}\n   Ejecutando: ollama pull ${hfModel}\n   Esto puede tardar varios minutos...` }]);
+                setStaticHistory(prev => [...prev, { type:'assistant', text:`⏳ Descargando modelo: ${modelName}\n   via huggingface-cli download\n   Esto puede tardar varios minutos...` }]);
                 setInput('');
-                const proc = spawn('ollama', ['pull', hfModel], { stdio: ['ignore', 'pipe', 'pipe'] });
-                let output = '';
-                proc.stdout.on('data', d => { output += d.toString(); });
-                proc.stderr.on('data', d => { output += d.toString(); });
-                proc.on('close', code => {
-                    if (code === 0) {
-                        setStaticHistory(prev => [...prev, { type:'assistant', text:`✅ Modelo descargado: ${modelName}\n\nPara usarlo, selecciona Ollama como proveedor (/config) y elige el modelo.` }]);
-                    } else {
-                        const errMsg = output.trim() || `Código de salida: ${code}`;
-                        setStaticHistory(prev => [...prev, { type:'assistant', text:`❌ Error al descargar: ${errMsg}\n\nAsegúrate de que Ollama está corriendo (ollama serve) y el nombre del modelo es correcto.` }]);
-                    }
+                const dlProc = spawn('huggingface-cli', ['download', modelName], {
+                    stdio: ['ignore', 'pipe', 'pipe'],
+                    env: { ...process.env, HF_HUB_ENABLE_HF_TRANSFER: '1' },
                 });
-                proc.on('error', err => {
-                    setStaticHistory(prev => [...prev, { type:'assistant', text:`❌ No se pudo ejecutar ollama: ${err.message}\n\nAsegúrate de que Ollama está instalado.` }]);
+                let dlOutput = '';
+                let cachePath = '';
+                dlProc.stdout.on('data', d => { cachePath += d.toString(); });
+                dlProc.stderr.on('data', d => { dlOutput += d.toString(); });
+                dlProc.on('close', code => {
+                    if (code !== 0) {
+                        setStaticHistory(prev => [...prev, { type:'assistant', text:`❌ Error al descargar: ${dlOutput.trim() || `código ${code}`}\n\nAsegúrate de tener huggingface-cli: pip install huggingface-hub` }]);
+                        return;
+                    }
+                    setStaticHistory(prev => [...prev, { type:'assistant', text:`⏳ Importando a Ollama...` }]);
+                    const modelDir = cachePath.trim();
+                    const ollamaName = modelName.replace(/\//g, '-').toLowerCase();
+                    const modelfilePath = path.join(os.tmpdir(), `Modelfile_${Date.now()}`);
+                    fs.writeFileSync(modelfilePath, `FROM ${modelDir}\n`);
+                    const createProc = spawn('ollama', ['create', ollamaName, '-f', modelfilePath], {
+                        stdio: ['ignore', 'pipe', 'pipe'],
+                    });
+                    let createOutput = '';
+                    createProc.stdout.on('data', d => { createOutput += d.toString(); });
+                    createProc.stderr.on('data', d => { createOutput += d.toString(); });
+                    createProc.on('close', code2 => {
+                        try { fs.unlinkSync(modelfilePath); } catch {}
+                        if (code2 === 0) {
+                            setStaticHistory(prev => [...prev, { type:'assistant', text:`✅ Modelo ${ollamaName} listo!\n\nUsa /config para seleccionarlo como modelo activo.` }]);
+                        } else {
+                            setStaticHistory(prev => [...prev, { type:'assistant', text:`❌ Error al importar a Ollama: ${createOutput.trim().substring(0, 100)}\n\nAsegúrate de que Ollama está corriendo.` }]);
+                        }
+                    });
+                });
+                dlProc.on('error', () => {
+                    setStaticHistory(prev => [...prev, { type:'assistant', text:`❌ huggingface-cli no encontrado.\nInstala con: pip install huggingface-hub` }]);
                 });
                 return;
             }
@@ -748,7 +802,7 @@ const App = ({ config: initCfg }) => {
         }
 
         if (key.backspace||key.delete) { setInput(p => p.slice(0, -1)); setCmdIndex(0); return; }
-        if (str && !key.ctrl && !key.meta && str.length === 1) {
+        if (str && !key.ctrl && !key.meta) {
             setInput(p => p + str); setCmdIndex(0);
         }
     });
