@@ -63,9 +63,21 @@ async function createLLM(provider, model, apiKey, baseUrl) {
             return new ChatOpenAI({
                 model,
                 apiKey: apiKey || process.env.OPENROUTER_API_KEY,
-                configuration: { baseURL: "https://openrouter.ai/api/v1" },
+                configuration: {
+                    baseURL: "https://openrouter.ai/api/v1",
+                    defaultHeaders: {
+                        "HTTP-Referer": "https://github.com/andreslpxz/AgentLag_npm",
+                        "X-Title": "AgentLag",
+                    },
+                },
                 temperature: 0.4,
                 maxTokens: 3600,
+                // Pide a OpenRouter rutar solo a providers que soporten function-calling.
+                // Evita el 404 "No endpoints found that support tool use" para modelos
+                // cuyos providers por defecto no exponen tools (p.ej. dolphin-mistral).
+                modelKwargs: {
+                    provider: { require_parameters: true },
+                },
             });
         }
         case "deepseek": {
