@@ -116,6 +116,80 @@ function clearLatestSession() {
     try { fs.writeFileSync(LEGACY_SESSION_FILE, JSON.stringify({ history: [] }, null, 2)); } catch {}
 }
 
+// ─── Utilidades para slash commands ───────────────────────────────────────────
+function copyToClipboard(text) {
+    return new Promise((resolve) => {
+        const candidates = [
+            ['termux-clipboard-set', []],
+            ['xclip', ['-selection', 'clipboard']],
+            ['xsel', ['--clipboard', '--input']],
+            ['pbcopy', []],
+            ['wl-copy', []],
+        ];
+        let i = 0;
+        const tryNext = () => {
+            if (i >= candidates.length) return resolve(false);
+            const [bin, args] = candidates[i++];
+            let proc;
+            try { proc = spawn(bin, args, { stdio: ['pipe', 'ignore', 'ignore'] }); }
+            catch { return tryNext(); }
+            proc.on('error', tryNext);
+            proc.on('close', code => { code === 0 ? resolve(true) : tryNext(); });
+            try { proc.stdin.write(text); proc.stdin.end(); } catch { tryNext(); }
+        };
+        tryNext();
+    });
+}
+
+function runCommand(bin, args = [], opts = {}) {
+    return new Promise((resolve) => {
+        let proc;
+        try { proc = spawn(bin, args, { stdio: ['ignore', 'pipe', 'pipe'], ...opts }); }
+        catch (e) { return resolve({ ok:false, output:`${bin} no encontrado: ${e.message}`, code:127 }); }
+        let out = '', err = '';
+        proc.stdout?.on('data', d => out += d.toString());
+        proc.stderr?.on('data', d => err += d.toString());
+        proc.on('error', (e) => resolve({ ok:false, output:`${bin} no encontrado: ${e.message}`, code:127 }));
+        proc.on('close', code => {
+            const text = (out + (err ? `\n${err}` : '')).trim();
+            resolve({ ok: code === 0, output: text || `(exit ${code})`, code });
+        });
+    });
+}
+
+const MEMORY_FILE  = path.join(CONFIG_DIR, 'memory.md');
+const HOOKS_FILE   = path.join(CONFIG_DIR, 'hooks.json');
+const MCP_FILE     = path.join(CONFIG_DIR, 'mcp.json');
+const AGENTS_DIR   = path.join(CONFIG_DIR, 'agents');
+
+// Detecta los varios formatos de error que indican que el modelo/proveedor no
+// soporta tool / function calling. Cubre OpenAI, Anthropic, OpenRouter (404
+// "No endpoints found that support tool use", "disabling create_file"), Mistral,
+// LangChain etc.
+function isToolUnsupportedError(err) {
+    const parts = [
+        err?.message,
+        err?.error?.message,
+        err?.cause?.message,
+        err?.response?.data?.error?.message,
+        typeof err === 'string' ? err : '',
+    ].filter(Boolean).join(' ').toLowerCase();
+    if (!parts) return false;
+    return (
+        parts.includes('does not support tools') ||
+        parts.includes('does not support tool') ||
+        parts.includes('tools are not supported') ||
+        parts.includes('tool use is not supported') ||
+        parts.includes('tool calling is not supported') ||
+        parts.includes('function calling is not supported') ||
+        parts.includes('no endpoints found that support tool use') ||
+        parts.includes('no endpoints found that support tools') ||
+        parts.includes('try disabling') && parts.includes('tool') ||
+        parts.includes('try disabling "create_file"') ||
+        parts.includes('model_not_found') && parts.includes('tool')
+    );
+}
+
 // ─── Constantes ───────────────────────────────────────────────────────────────
 const SPINNERS       = ['✻', '✼', '✽', '✾', '✿'];
 const THINKING_WORDS = ['Thinking','Reasoning','Analyzing','Computing','Marinating','Levitating','Pondering','Brewing'];
@@ -412,15 +486,46 @@ const ModelScreen = ({ provider, menuIndex, inputText, ollamaModels, ollamaStatu
 };
 
 // ─── Comandos slash ───────────────────────────────────────────────────────────
+const EFFORT_LEVELS = ['low', 'medium', 'high', 'xhigh', 'max'];
+const AGENTLAG_VERSION = '1.0.0';
+
 const SLASH_COMMANDS = [
-    { cmd:'/add-dir',  desc:['Add a new working directory'] },
-    { cmd:'/advisor',  desc:['Configure the Advisor Tool','for guidance at key moments…'] },
-    { cmd:'/agents',   desc:['Manage agent configurations'] },
-    { cmd:'/branch',   desc:['Create a branch of the current','conversation at this point'] },
-    { cmd:'/clear',    desc:['Clear conversation history'] },
-    { cmd:'/download', desc:['Download HF model via huggingface-cli','e importar a Ollama'] },
-    { cmd:'/import',   desc:['Import conversation by name','example: /import conversación1'] },
-    { cmd:'/help',     desc:['Show all available commands'] },
+    { cmd:'/add-dir',     desc:['Añadir un directorio al workspace de confianza'] },
+    { cmd:'/advisor',     desc:['Activar/desactivar modelo asesor para decisiones complejas'] },
+    { cmd:'/agents',      desc:['Listar subagentes definidos por el usuario'] },
+    { cmd:'/branch',      desc:['Guardar la conversación actual con un nuevo nombre'] },
+    { cmd:'/btw',         desc:['Lanzar una pregunta paralela sin romper el flujo'] },
+    { cmd:'/clear',       desc:['Limpiar el historial de la conversación'] },
+    { cmd:'/color',       desc:['Volver a abrir el selector de tema/color'] },
+    { cmd:'/compact',     desc:['Resumir el historial para liberar contexto'] },
+    { cmd:'/config',      desc:['Reiniciar y volver a correr el wizard completo'] },
+    { cmd:'/context',     desc:['Mostrar uso estimado de contexto/tokens'] },
+    { cmd:'/copy',        desc:['Copiar la última respuesta del asistente al portapapeles'] },
+    { cmd:'/cwd',         desc:['Mostrar el directorio de trabajo actual'] },
+    { cmd:'/diff',        desc:['Mostrar git diff de cambios sin confirmar'] },
+    { cmd:'/doctor',      desc:['Ejecutar diagnóstico de la instalación y proveedores'] },
+    { cmd:'/download',    desc:['Descargar un modelo de HuggingFace e importar a Ollama'] },
+    { cmd:'/effort',      desc:['Ajustar el nivel de esfuerzo del modelo (low|medium|high|xhigh|max)'] },
+    { cmd:'/exit',        desc:['Guardar la sesión y salir'] },
+    { cmd:'/export',      desc:['Exportar la conversación a un archivo markdown'] },
+    { cmd:'/feedback',    desc:['Abrir la página de issues de GitHub para enviar feedback'] },
+    { cmd:'/focus',       desc:['Toggle modo focus (oculta tool spam)'] },
+    { cmd:'/help',        desc:['Mostrar todos los comandos disponibles'] },
+    { cmd:'/hooks',       desc:['Listar hooks configurados (~/.agentlag/hooks.json)'] },
+    { cmd:'/ide',         desc:['Mostrar estado de la integración con IDE'] },
+    { cmd:'/import',      desc:['Importar una conversación por nombre'] },
+    { cmd:'/keybindings', desc:['Mostrar los atajos de teclado disponibles'] },
+    { cmd:'/logout',      desc:['Borrar la API key del proveedor activo'] },
+    { cmd:'/mcp',         desc:['Listar servidores MCP configurados'] },
+    { cmd:'/memory',      desc:['Ver/editar ~/.agentlag/memory.md (notas del proyecto)'] },
+    { cmd:'/model',       desc:['Cambiar el modelo activo'] },
+    { cmd:'/provider',    desc:['Cambiar el proveedor de LLM activo'] },
+    { cmd:'/quit',        desc:['Guardar la sesión y salir'] },
+    { cmd:'/react',       desc:['Toggle modo ReAct (forzar fallback sin tools nativas)'] },
+    { cmd:'/rename',      desc:['Renombrar la conversación activa'] },
+    { cmd:'/resume',      desc:['Reanudar una conversación guardada por nombre'] },
+    { cmd:'/sessions',    desc:['Listar conversaciones guardadas en el proyecto'] },
+    { cmd:'/version',     desc:['Mostrar la versión de AgentLag'] },
 ];
 
 const CommandMenu = ({ input, selectedIndex }) => {
@@ -495,6 +600,10 @@ const App = ({ config: initCfg }) => {
     // Nuevos estados para atajos
     const [isVerbose, setIsVerbose]       = useState(false);
     const [showTasks, setShowTasks]       = useState(false);
+    const [focusMode, setFocusMode]       = useState(!!initCfg.focusMode);
+    const [effortLevel, setEffortLevel]   = useState(initCfg.effort || 'high');
+    const [advisorEnabled, setAdvisorEnabled] = useState(!!initCfg.advisor);
+    const [forceReAct, setForceReAct]     = useState(!!initCfg.forceReAct);
     const abortCtrlRef                    = useRef(null);
 
     // Hooks de layout
@@ -570,6 +679,406 @@ const App = ({ config: initCfg }) => {
             setConfirmIdx(0);
             setPendingConfirm({ toolName, detail, resolve });
         }), []);
+
+    // ── Helpers para slash commands ───────────────────────────────────────────
+    const say = (text, ephemeral = false) => {
+        setStaticHistory(prev => [...prev, { type:'assistant', text, ephemeral }]);
+    };
+
+    const lastAssistantText = () => {
+        for (let i = historyRef.current.length - 1; i >= 0; i--) {
+            const item = historyRef.current[i];
+            if (item.type === 'assistant' && item.text) return item.text;
+        }
+        return null;
+    };
+
+    const persistFlag = (key, value) => {
+        cfg.current = { ...cfg.current, [key]: value };
+        saveConfig(cfg.current);
+    };
+
+    const rebuildAgentWith = async (overrides = {}) => {
+        try {
+            const next = await buildAgent(overrides);
+            setAgent(next);
+            return true;
+        } catch (e) {
+            say(`❌ Error reconstruyendo el agente: ${e.message}`);
+            return false;
+        }
+    };
+
+    // Devuelve true si el comando fue manejado (consume el input).
+    // Devuelve false si no es un slash command conocido (sigue el flujo normal).
+    const handleSlashCommand = (trimmed) => {
+        if (!trimmed.startsWith('/')) return false;
+        const [head, ...rest] = trimmed.split(/\s+/);
+        const cmd  = head.toLowerCase();
+        const args = rest.join(' ').trim();
+
+        switch (cmd) {
+            case '/help': {
+                const width = Math.max(...SLASH_COMMANDS.map(c => c.cmd.length));
+                const helpText = SLASH_COMMANDS
+                    .map(c => `  ${c.cmd.padEnd(width + 2)} ${c.desc.join(' ')}`)
+                    .join('\n');
+                say(`Comandos disponibles:\n${helpText}`);
+                return true;
+            }
+            case '/version': {
+                say(`AgentLag v${AGENTLAG_VERSION}\nNode ${process.version} · ${process.platform}/${process.arch}`);
+                return true;
+            }
+            case '/cwd': {
+                say(`📁 ${process.cwd()}`);
+                return true;
+            }
+            case '/exit':
+            case '/quit': {
+                saveAndExit();
+                return true;
+            }
+            case '/clear': {
+                setStaticHistory(prev => prev.filter(i => i.type === 'welcome'));
+                msgRef.current = [];
+                currentConversationRef.current = null;
+                clearLatestSession();
+                return true;
+            }
+            case '/config': {
+                cfg.current = {};
+                saveConfig({});
+                setScreen('color');
+                return true;
+            }
+            case '/color': {
+                cfg.current = { ...cfg.current, colorSet: false };
+                saveConfig(cfg.current);
+                setMenuIndex(0);
+                setScreen('color');
+                return true;
+            }
+            case '/provider': {
+                cfg.current = { ...cfg.current, provider: null, apiKey: null, model: null };
+                saveConfig(cfg.current);
+                setMenuIndex(0); setFormInput('');
+                setScreen('provider');
+                return true;
+            }
+            case '/model': {
+                if (!selProvider) {
+                    setScreen('provider');
+                } else {
+                    setMenuIndex(0); setFormInput('');
+                    setScreen('model');
+                }
+                return true;
+            }
+            case '/effort': {
+                if (!args) {
+                    say(`Nivel de esfuerzo actual: ${effortLevel}\nUso: /effort <${EFFORT_LEVELS.join(' | ')}>`);
+                    return true;
+                }
+                const lvl = args.toLowerCase();
+                if (!EFFORT_LEVELS.includes(lvl)) {
+                    say(`❌ Nivel desconocido "${args}". Opciones: ${EFFORT_LEVELS.join(', ')}.`);
+                    return true;
+                }
+                setEffortLevel(lvl);
+                persistFlag('effort', lvl);
+                say(`✅ Effort = ${lvl}`);
+                return true;
+            }
+            case '/focus': {
+                const next = !focusMode;
+                setFocusMode(next);
+                persistFlag('focusMode', next);
+                say(`🎯 Focus mode: ${next ? 'ON (oculta tools)' : 'OFF'}`);
+                return true;
+            }
+            case '/react': {
+                const next = !forceReAct;
+                setForceReAct(next);
+                persistFlag('forceReAct', next);
+                say(`🔁 ReAct forzado: ${next ? 'ON' : 'OFF'}\nReconstruyendo agente…`);
+                rebuildAgentWith(next ? { forceReAct: true } : {});
+                return true;
+            }
+            case '/advisor': {
+                const next = !advisorEnabled;
+                setAdvisorEnabled(next);
+                persistFlag('advisor', next);
+                say(`🧭 Advisor: ${next ? 'ON' : 'OFF'} (la lógica completa requiere segundo modelo configurado)`);
+                return true;
+            }
+            case '/logout': {
+                const provider = cfg.current.provider || 'desconocido';
+                cfg.current = { ...cfg.current, apiKey: null };
+                saveConfig(cfg.current);
+                say(`🔒 API key borrada para ${provider}. Usa /provider para reconfigurar.`);
+                return true;
+            }
+            case '/add-dir': {
+                if (!args) { say('Uso: /add-dir <ruta>'); return true; }
+                const target = path.resolve(args);
+                const trustedDirs = cfg.current.trustedDirs || [];
+                if (trustedDirs.includes(target)) {
+                    say(`✓ ${target} ya estaba en la lista de confianza.`);
+                } else {
+                    trustedDirs.push(target);
+                    cfg.current = { ...cfg.current, trustedDirs };
+                    saveConfig(cfg.current);
+                    say(`✅ Directorio añadido a workspace: ${target}\nDirs de confianza:\n  ${trustedDirs.join('\n  ')}`);
+                }
+                return true;
+            }
+            case '/copy': {
+                const last = lastAssistantText();
+                if (!last) { say('⚠ No hay respuesta del asistente para copiar.'); return true; }
+                copyToClipboard(last).then(ok => {
+                    say(ok
+                        ? `📋 Copiado al portapapeles (${last.length} chars).`
+                        : `⚠ No se encontró un cliente de portapapeles. Instala xclip / xsel / wl-copy / pbcopy / termux-clipboard-set.\n\n--- contenido ---\n${last}`);
+                });
+                return true;
+            }
+            case '/diff': {
+                say('⏳ git diff HEAD…');
+                runCommand('git', ['diff', 'HEAD']).then(({ ok, output }) => {
+                    if (!ok && output.includes('not a git repository')) {
+                        say('⚠ Este directorio no es un repo git.');
+                    } else {
+                        const trimmedOut = output.length > 4000 ? output.slice(0, 4000) + '\n…(truncado)' : output;
+                        say(trimmedOut || '(sin cambios pendientes)');
+                    }
+                });
+                return true;
+            }
+            case '/doctor': {
+                const cfgNow = cfg.current || {};
+                const lines = [];
+                lines.push('🩺 Diagnóstico AgentLag');
+                lines.push(`  • Node ${process.version} · ${process.platform}/${process.arch}`);
+                lines.push(`  • Versión: ${AGENTLAG_VERSION}`);
+                lines.push(`  • cwd: ${process.cwd()}`);
+                lines.push(`  • Provider: ${cfgNow.provider || '(sin configurar)'}`);
+                lines.push(`  • Modelo: ${cfgNow.model || '(sin configurar)'}`);
+                lines.push(`  • API key guardada: ${cfgNow.apiKey ? 'sí' : 'no'}`);
+                lines.push(`  • Effort: ${effortLevel}`);
+                lines.push(`  • ReAct forzado: ${forceReAct ? 'sí' : 'no'}`);
+                lines.push(`  • Tavily key: ${process.env.TAVILY_API_KEY ? 'sí' : 'no'}`);
+                lines.push(`  • Mensajes en sesión: ${msgRef.current.length}`);
+                say(lines.join('\n'));
+                if (cfgNow.provider === 'ollama' || cfgNow.provider === 'huggingface') {
+                    isOllamaRunning().then(running => say(`  • Ollama corriendo: ${running ? 'sí' : 'no (ollama serve)'}`));
+                }
+                return true;
+            }
+            case '/context': {
+                const stats = [];
+                stats.push(`📊 Contexto`);
+                stats.push(`  • Tokens acumulados: ${totalTokens}`);
+                stats.push(`  • Mensajes en memoria: ${msgRef.current.length}`);
+                stats.push(`  • Items en historial UI: ${historyRef.current.length}`);
+                stats.push(`  • Conversación activa: ${currentConversationRef.current || '(latest)'}`);
+                say(stats.join('\n'));
+                return true;
+            }
+            case '/compact': {
+                const removed = msgRef.current.length;
+                if (removed === 0) { say('Ya estás en contexto vacío.'); return true; }
+                const summary = `[resumen automático: ${removed} mensajes previos en esta sesión]`;
+                msgRef.current = [new HumanMessage(summary)];
+                setStaticHistory(prev => {
+                    const welcome = prev.find(i => i.type === 'welcome');
+                    return [
+                        ...(welcome ? [welcome] : []),
+                        { type:'assistant', text:`🗜 Compactados ${removed} mensajes en un resumen.`, ephemeral:true },
+                    ];
+                });
+                setTotalTokens(0);
+                return true;
+            }
+            case '/export': {
+                const name = args || `export-${Date.now()}`;
+                const safe = normalizeConversationName(name) || `export-${Date.now()}`;
+                const dir  = path.join(process.cwd(), '.agentlag', 'exports');
+                try { fs.mkdirSync(dir, { recursive: true }); } catch {}
+                const file = path.join(dir, `${safe}.md`);
+                const lines = ['# AgentLag conversation', '', `_exported: ${new Date().toISOString()}_`, ''];
+                for (const item of historyRef.current) {
+                    if (item.type === 'user')      lines.push(`## 🧑 user`, '', item.text || '', '');
+                    if (item.type === 'assistant') lines.push(`## 🤖 assistant`, '', item.text || '', '');
+                    if (item.type === 'tool')      lines.push(`### 🛠 tool · ${item.name}`, '', '```', String(item.output || ''), '```', '');
+                }
+                try {
+                    fs.writeFileSync(file, lines.join('\n'));
+                    say(`✅ Exportado a ${file}`);
+                } catch (e) {
+                    say(`❌ Error exportando: ${e.message}`);
+                }
+                return true;
+            }
+            case '/feedback': {
+                say(`💬 Envía feedback / bugs:\n  https://github.com/andreslpxz/AgentLag_npm/issues/new\n\nIncluye versión (${AGENTLAG_VERSION}), provider y un resumen.`);
+                return true;
+            }
+            case '/keybindings': {
+                say([
+                    '⌨  Atajos:',
+                    '  Enter            Enviar',
+                    '  Shift+Tab        Ciclar modo',
+                    '  Esc              Limpiar input · doble Esc limpia historial',
+                    '  Ctrl+C           Salir guardando sesión',
+                    '  Ctrl+Z           Cancelar la operación en curso',
+                    '  Ctrl+O           Toggle verbose',
+                    '  Ctrl+T           Toggle tasks',
+                    '  Alt+P            Cambiar de modelo',
+                    '  !                Modo shell (al inicio del input)',
+                    '  @                Mencionar archivo (al inicio del input)',
+                    '  /                Menú de comandos (autocomplete)',
+                ].join('\n'));
+                return true;
+            }
+            case '/hooks': {
+                let data = {};
+                try { data = JSON.parse(fs.readFileSync(HOOKS_FILE, 'utf8')); } catch {}
+                const entries = Object.entries(data);
+                if (entries.length === 0) {
+                    say(`🪝 No hay hooks configurados.\nEdita ${HOOKS_FILE} para añadir, ej:\n{\n  "PreToolUse":  ["echo about to run a tool"],\n  "PostToolUse": ["echo finished"]\n}`);
+                } else {
+                    const lines = ['🪝 Hooks configurados:'];
+                    for (const [event, cmds] of entries) {
+                        lines.push(`  • ${event}: ${(Array.isArray(cmds) ? cmds : [cmds]).join(' ; ')}`);
+                    }
+                    say(lines.join('\n'));
+                }
+                return true;
+            }
+            case '/mcp': {
+                let data = {};
+                try { data = JSON.parse(fs.readFileSync(MCP_FILE, 'utf8')); } catch {}
+                const servers = Object.entries(data?.mcpServers || {});
+                if (servers.length === 0) {
+                    say(`🔌 No hay servidores MCP configurados.\nCrea ${MCP_FILE} con:\n{\n  "mcpServers": {\n    "playwright": { "command": "npx", "args": ["-y","@playwright/mcp@latest"] }\n  }\n}`);
+                } else {
+                    const lines = ['🔌 MCP servers:'];
+                    for (const [name, def] of servers) {
+                        lines.push(`  • ${name}: ${def.command || ''} ${(def.args || []).join(' ')}`);
+                    }
+                    say(lines.join('\n'));
+                }
+                return true;
+            }
+            case '/agents': {
+                let entries = [];
+                try { entries = fs.readdirSync(AGENTS_DIR).filter(f => f.endsWith('.json')); } catch {}
+                if (entries.length === 0) {
+                    say(`🤖 No hay subagentes definidos.\nCrea archivos en ${AGENTS_DIR}/<nombre>.json con { "description": "...", "systemPrompt": "..." }`);
+                } else {
+                    const lines = ['🤖 Subagentes:'];
+                    for (const f of entries) {
+                        try {
+                            const def = JSON.parse(fs.readFileSync(path.join(AGENTS_DIR, f), 'utf8'));
+                            lines.push(`  • ${path.basename(f, '.json')} — ${def.description || '(sin descripción)'}`);
+                        } catch {
+                            lines.push(`  • ${path.basename(f, '.json')} — (archivo inválido)`);
+                        }
+                    }
+                    say(lines.join('\n'));
+                }
+                return true;
+            }
+            case '/ide': {
+                const term = process.env.TERM_PROGRAM || process.env.TERM || 'unknown';
+                const inIDE = !!(process.env.VSCODE_INJECTION || process.env.CURSOR_TRACE_ID || process.env.JETBRAINS_IDE);
+                say(`💻 IDE/terminal: ${term}\n  • Detectado dentro de IDE: ${inIDE ? 'sí' : 'no'}\n  • La integración profunda con IDEs aún no está implementada.`);
+                return true;
+            }
+            case '/memory': {
+                let content = '';
+                try { content = fs.readFileSync(MEMORY_FILE, 'utf8'); } catch {}
+                if (!args) {
+                    if (!content.trim()) {
+                        say(`🧠 Memoria vacía. Crea/edita ${MEMORY_FILE} o usa:\n  /memory add <nota>     añade una línea`);
+                    } else {
+                        say(`🧠 Memoria (${MEMORY_FILE}):\n\n${content.trim()}`);
+                    }
+                    return true;
+                }
+                const sub = rest[0]?.toLowerCase();
+                const note = rest.slice(1).join(' ').trim();
+                if (sub === 'add' && note) {
+                    try { ensureDir(); } catch {}
+                    fs.appendFileSync(MEMORY_FILE, `- ${note}\n`);
+                    say(`✅ Añadido a memoria: ${note}`);
+                } else if (sub === 'clear') {
+                    try { fs.writeFileSync(MEMORY_FILE, ''); } catch {}
+                    say('🧹 Memoria limpiada.');
+                } else {
+                    say('Uso: /memory  ·  /memory add <nota>  ·  /memory clear');
+                }
+                return true;
+            }
+            case '/sessions': {
+                const list = listConversations();
+                if (list.length === 0) say('Sin sesiones guardadas en este proyecto.');
+                else say(`💾 Sesiones:\n  ${list.join('\n  ')}\n\nUsa /resume <nombre> o /import <nombre>.`);
+                return true;
+            }
+            case '/resume':
+            case '/import': {
+                const importName = args;
+                const s = loadSession(importName);
+                if (s.history?.length) {
+                    currentConversationRef.current = s.name || normalizeConversationName(importName) || currentConversationRef.current;
+                    msgRef.current = s.history.map(m =>
+                        m.type === 'user' ? new HumanMessage(m.text) : new AIMessage(m.text)
+                    );
+                    const welcome = historyRef.current.find(i => i.type === 'welcome');
+                    setStaticHistory([
+                        ...(welcome ? [welcome] : []),
+                        ...s.history,
+                        { type:'assistant', text:`Historial importado: ${s.name || importName || 'latest'}.`, ephemeral:true },
+                    ]);
+                } else {
+                    const available = listConversations();
+                    const suffix = available.length ? `\nDisponibles: ${available.join(', ')}` : '';
+                    say(`No hay historial para importar${importName ? `: ${importName}` : ' en este proyecto'}.${suffix}`, true);
+                }
+                return true;
+            }
+            case '/rename': {
+                if (!args) { say('Uso: /rename <nuevo-nombre>'); return true; }
+                const next = normalizeConversationName(args);
+                if (!next) { say('❌ Nombre inválido.'); return true; }
+                currentConversationRef.current = next;
+                const saved = saveSession(historyRef.current, next);
+                say(`✅ Conversación renombrada a "${saved?.name || next}".`);
+                return true;
+            }
+            case '/branch': {
+                const branchName = args ? normalizeConversationName(args) : `${currentConversationRef.current || 'branch'}-${Date.now().toString(36)}`;
+                const saved = saveSession(historyRef.current, branchName);
+                if (saved?.name) {
+                    currentConversationRef.current = saved.name;
+                    say(`🌿 Branch creado: ${saved.name}. La conversación actual ahora se guarda con ese nombre.`);
+                } else {
+                    say('⚠ No hay nada que ramificar todavía.');
+                }
+                return true;
+            }
+            case '/btw': {
+                say(args
+                    ? `📝 Nota lateral: ${args}`
+                    : '📝 Modo nota / side question. Escribe la pregunta paralela como un mensaje normal — no romperá el flujo principal.');
+                return true;
+            }
+            default:
+                return false;
+        }
+    };
 
     // ── Input ─────────────────────────────────────────────────────────────────
     useInput((str, key) => {
@@ -822,26 +1331,10 @@ const App = ({ config: initCfg }) => {
         if (key.return) {
             const trimmed = input.trim();
             if (!trimmed) return;
-            if (trimmed === '/config') {
-                // Reset setup
-                cfg.current = {};
-                saveConfig({});
-                setScreen('color');
-                return;
-            }
-            if (trimmed === '/clear') {
-                setStaticHistory(prev => prev.filter(i => i.type === 'welcome'));
-                msgRef.current = []; currentConversationRef.current = null; clearLatestSession(); setInput(''); return;
-            }
-            if (trimmed === '/help') {
-                const helpText = SLASH_COMMANDS.map(c => `  ${c.cmd.padEnd(12)} - ${c.desc.join(' ')}`).join('\n');
-                setStaticHistory(prev => [...prev, { type: 'assistant', text: `Comandos disponibles:\n${helpText}` }]);
-                setInput(''); return;
-            }
-            if (trimmed.startsWith('/btw')) {
-                setStaticHistory(prev => [...prev, { type: 'assistant', text: '📝 Modo nota / side question activo...' }]);
-                setInput(''); return;
-            }
+            const handled = handleSlashCommand(trimmed);
+            if (handled === true) { setInput(''); setCmdIndex(0); return; }
+            // false = no era slash command; null = lo manejó pero queremos seguir flow
+
             if (trimmed.startsWith('/download')) {
                 const modelName = trimmed.replace('/download', '').trim().replace(/^hf\.co\//, '');
                 if (!modelName) {
@@ -887,27 +1380,6 @@ const App = ({ config: initCfg }) => {
                     setStaticHistory(prev => [...prev, { type:'assistant', text:`❌ python3 o huggingface-hub no encontrado.\nInstala con: pip install huggingface-hub` }]);
                 });
                 return;
-            }
-            if (trimmed.startsWith('/import')) {
-                const importName = trimmed.replace(/^\/import\b/, '').trim();
-                const s = loadSession(importName);
-                if (s.history?.length) {
-                    currentConversationRef.current = s.name || normalizeConversationName(importName) || currentConversationRef.current;
-                    msgRef.current = s.history.map(m =>
-                        m.type === 'user' ? new HumanMessage(m.text) : new AIMessage(m.text)
-                    );
-                    const welcome = historyRef.current.find(i => i.type === 'welcome');
-                    setStaticHistory([
-                        ...(welcome ? [welcome] : []),
-                        ...s.history,
-                        { type:'assistant', text:`Historial importado: ${s.name || importName || 'latest'}.`, ephemeral:true },
-                    ]);
-                } else {
-                    const available = listConversations();
-                    const suffix = available.length ? `\nDisponibles: ${available.join(', ')}` : '';
-                    setStaticHistory(prev => [...prev, { type:'assistant', text:`No hay historial para importar${importName ? `: ${importName}` : ' en este proyecto'}.${suffix}`, ephemeral:true }]);
-                }
-                setInput(''); return;
             }
             if (trimmed.startsWith('/')) {
                 const q = trimmed.slice(1).toLowerCase();
@@ -1023,10 +1495,10 @@ const App = ({ config: initCfg }) => {
             if (responseText) setStaticHistory(prev=>[...prev,{type:'assistant',text:responseText}]);
 
         } catch(err) {
-            if (err.message?.includes('does not support tools')) {
+            if (isToolUnsupportedError(err)) {
                 setStaticHistory(prev=>[...prev,{
                     type:'assistant',
-                    text:'⚠️ Este modelo no soporta tools nativas. Cambiando a modo ReAct...'
+                    text:'⚠️ El proveedor no expone tool calling para este modelo. Cambiando a modo ReAct…'
                 }]);
                 try {
                     const reactAgent = await buildAgent({ forceReAct: true });
@@ -1099,7 +1571,7 @@ const App = ({ config: initCfg }) => {
                     setStaticHistory(prev=>[...prev,{type:'assistant',text:`❌ Error (ReAct): ${reactErr.message}`}]);
                 }
             } else {
-                setStaticHistory(prev=>[...prev,{type:'assistant',text:`❌ Error: ${err.message}`}]);
+                setStaticHistory(prev=>[...prev,{type:'assistant',text:`❌ Error: ${err.message || err}`}]);
             }
         } finally {
             setStatus('idle'); setActiveTool(null); setThinkStart(null); setElapsed(0);
@@ -1122,7 +1594,7 @@ const App = ({ config: initCfg }) => {
 
     return (
         <Box flexDirection="column">
-            <Static items={staticHistory}>
+            <Static items={focusMode ? staticHistory.filter(i => i.type !== 'tool') : staticHistory}>
                 {(item, index) => {
                     if (item.type==='welcome')   return (
                         <WelcomeBox key="welcome" provider={item.provider} model={item.model} />
@@ -1188,7 +1660,10 @@ const App = ({ config: initCfg }) => {
                         <Text color="gray">  ? for shortcuts</Text>
                         <Text color="gray">{' '.repeat(40)}</Text>
                         <Text color="white">●</Text>
-                        <Text color="gray"> high · /effort</Text>
+                        <Text color="gray"> {effortLevel} · /effort</Text>
+                        {focusMode && <Text color="magenta"> · focus</Text>}
+                        {forceReAct && <Text color="yellow"> · react</Text>}
+                        {advisorEnabled && <Text color="cyan"> · advisor</Text>}
                     </Box>
                 )}
             </Box>
