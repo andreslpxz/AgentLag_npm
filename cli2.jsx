@@ -162,32 +162,79 @@ const HOOKS_FILE   = path.join(CONFIG_DIR, 'hooks.json');
 const MCP_FILE     = path.join(CONFIG_DIR, 'mcp.json');
 const AGENTS_DIR   = path.join(CONFIG_DIR, 'agents');
 
-// Detecta los varios formatos de error que indican que el modelo/proveedor no
-// soporta tool / function calling. Cubre OpenAI, Anthropic, OpenRouter (404
-// "No endpoints found that support tool use", "disabling create_file"), Mistral,
-// LangChain etc.
-function isToolUnsupportedError(err) {
+// Junta todas las posibles ubicaciones de mensaje en un objeto de error para
+// poder hacer matching case-insensitive sin reventar por shapes inesperados.
+function flattenErrorText(err) {
     const parts = [
         err?.message,
         err?.error?.message,
         err?.cause?.message,
         err?.response?.data?.error?.message,
         typeof err === 'string' ? err : '',
-    ].filter(Boolean).join(' ').toLowerCase();
-    if (!parts) return false;
+    ].filter(Boolean);
+    return parts.join(' ');
+}
+
+// Detecta los varios formatos de error que indican que el modelo/proveedor no
+// soporta tool / function calling correctamente. Cubre:
+//   - OpenAI / Anthropic / Mistral (literal "does not support tools")
+//   - OpenRouter (404 "No endpoints found that support tool use",
+//     "Try disabling create_file")
+//   - Groq (400 invalid_request_error code:"tool_use_failed",
+//     "Failed to call a function. Please adjust your prompt"). Pasa muy
+//     seguido con llama-4-scout y derivados que emiten texto en vez de un
+//     JSON de tool call. La respuesta SI suele estar en `failed_generation`.
+function isToolUnsupportedError(err) {
+    const text = flattenErrorText(err).toLowerCase();
+    if (!text) return false;
     return (
-        parts.includes('does not support tools') ||
-        parts.includes('does not support tool') ||
-        parts.includes('tools are not supported') ||
-        parts.includes('tool use is not supported') ||
-        parts.includes('tool calling is not supported') ||
-        parts.includes('function calling is not supported') ||
-        parts.includes('no endpoints found that support tool use') ||
-        parts.includes('no endpoints found that support tools') ||
-        parts.includes('try disabling') && parts.includes('tool') ||
-        parts.includes('try disabling "create_file"') ||
-        parts.includes('model_not_found') && parts.includes('tool')
+        text.includes('does not support tools') ||
+        text.includes('does not support tool') ||
+        text.includes('tools are not supported') ||
+        text.includes('tool use is not supported') ||
+        text.includes('tool calling is not supported') ||
+        text.includes('function calling is not supported') ||
+        text.includes('no endpoints found that support tool use') ||
+        text.includes('no endpoints found that support tools') ||
+        (text.includes('try disabling') && text.includes('tool')) ||
+        text.includes('try disabling "create_file"') ||
+        (text.includes('model_not_found') && text.includes('tool')) ||
+        // Groq tool_use_failed
+        text.includes('tool_use_failed') ||
+        text.includes('failed to call a function') ||
+        text.includes('please adjust your prompt')
     );
+}
+
+// Cuando Groq devuelve `tool_use_failed`, el cuerpo de la respuesta que el
+// modelo intentó emitir va en `failed_generation`. Lo intentamos parsear para
+// mostrarle al usuario el contenido (suele ser la respuesta real) en vez de
+// dejarle solo "❌ Error".
+function extractFailedGeneration(err) {
+    const raw = flattenErrorText(err);
+    if (!raw) return null;
+    // 1. Intento directo: si err.error.failed_generation existe.
+    const direct =
+        err?.error?.failed_generation ??
+        err?.response?.data?.error?.failed_generation ??
+        null;
+    if (typeof direct === 'string' && direct.trim()) return direct;
+    // 2. Buscar el primer JSON dentro del texto y parsearlo.
+    const start = raw.indexOf('{');
+    if (start === -1) return null;
+    const candidate = raw.slice(start);
+    try {
+        const parsed = JSON.parse(candidate);
+        const fg = parsed?.error?.failed_generation;
+        return typeof fg === 'string' && fg.trim() ? fg : null;
+    } catch {
+        // 3. Fallback regex (cuando el JSON está truncado / no es válido).
+        const m = raw.match(/"failed_generation"\s*:\s*"((?:[^"\\]|\\.)*)"/);
+        if (m && m[1]) {
+            try { return JSON.parse(`"${m[1]}"`); } catch { return m[1]; }
+        }
+        return null;
+    }
 }
 
 // ─── Constantes ───────────────────────────────────────────────────────────────
@@ -1496,13 +1543,33 @@ const App = ({ config: initCfg }) => {
 
         } catch(err) {
             if (isToolUnsupportedError(err)) {
+                // Si Groq devolvió `tool_use_failed`, el contenido que el modelo
+                // intentó emitir suele ir en `failed_generation`. Lo
+                // recuperamos y lo enseñamos como respuesta del asistente
+                // antes de cambiar a ReAct, así el usuario no pierde el
+                // turno.
+                const salvaged = extractFailedGeneration(err);
+                if (salvaged) {
+                    setStaticHistory(prev=>[...prev,{
+                        type:'assistant',
+                        text: salvaged,
+                    }]);
+                    msgRef.current = [...msgRef.current, new AIMessage(salvaged)];
+                }
                 setStaticHistory(prev=>[...prev,{
                     type:'assistant',
-                    text:'⚠️ El proveedor no expone tool calling para este modelo. Cambiando a modo ReAct…'
+                    text: salvaged
+                        ? 'ℹ️ El proveedor falló al emitir tool calls; activando modo ReAct para los próximos turnos…'
+                        : '⚠️ El proveedor no expone tool calling para este modelo. Cambiando a modo ReAct…'
                 }]);
                 try {
                     const reactAgent = await buildAgent({ forceReAct: true });
                     setAgent(reactAgent);
+                    setForceReAct(true);
+                    persistFlag('forceReAct', true);
+                    // Si pudimos rescatar la respuesta, ya cumplimos el turno;
+                    // no reintentamos la misma pregunta para no duplicar.
+                    if (salvaged) { return; }
                     // Reintentar con el agente ReAct
                     setStatus('thinking'); setThinkWord(randWord()); setThinkStart(Date.now());
                     const retryStream = await reactAgent.stream(
