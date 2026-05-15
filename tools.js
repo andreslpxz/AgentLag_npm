@@ -316,4 +316,40 @@ export const addSkill = tool(
 // ─────────────────────────────────────────────
 // EXPORTAR TODAS LAS HERRAMIENTAS
 // ─────────────────────────────────────────────
-export const tools = [createFile, readFile, editFile, listDirectory, searchFiles, runShell, webSearch, listSkills, readSkillTool, findSkills, addSkill];
+
+// ─────────────────────────────────────────────
+// HERRAMIENTA: GESTIONAR MEMORIA (MEMORIA INFINITA)
+// ─────────────────────────────────────────────
+import { addToMemory, listMemory } from './memory_utils.js';
+
+export const manageMemory = tool(
+  async ({ action, key, value }) => {
+    try {
+      if (action === 'save') {
+        if (!key || !value) return "❌ Debes proporcionar clave (key) y valor (value) para guardar.";
+        addToMemory(key, value);
+        return `✅ Guardado en memoria: "${key}"`;
+      }
+      if (action === 'list') {
+        const mem = listMemory();
+        return mem ? `🧠 Memoria actual:\n${mem}` : "⚠️ La memoria está vacía.";
+      }
+      return "❌ Acción no válida. Usa 'save' o 'list'.";
+    } catch (error) {
+      return `❌ Error en memoria: ${error.message}`;
+    }
+  },
+  {
+    name: "manage_memory",
+    description: "Guarda o recupera información importante en la memoria a largo plazo. Úsala para recordar preferencias del usuario, detalles del proyecto, o cualquier dato que deba persistir entre sesiones. Acciones: 'save' (requiere key y value) o 'list'.",
+    schema: z.object({
+      action: z.enum(['save', 'list']).describe("Acción a realizar: 'save' para guardar, 'list' para ver todo."),
+      key: z.string().optional().describe("Clave del dato a guardar (ej: 'preferencia_estilo')"),
+      value: z.string().optional().describe("Valor o contenido a recordar."),
+    }),
+  }
+);
+
+// Actualizar la lista de herramientas exportadas (sobrescribiendo la línea anterior si es necesario)
+// Nota: como ya exporté 'tools' antes, voy a re-declararla al final del archivo.
+export const tools = [createFile, readFile, editFile, listDirectory, searchFiles, runShell, webSearch, listSkills, readSkillTool, findSkills, addSkill, manageMemory];
