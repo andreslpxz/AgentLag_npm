@@ -2,6 +2,18 @@
 
 AgentLag es un agente CLI interactivo para tareas de ingeniería de software.
 
+## Proveedores LLM
+
+AgentLag soporta varios proveedores desde el wizard `/provider`, incluyendo Lightning AI.
+
+Para usar Lightning AI:
+
+1. Define `LIGHTNING_API_KEY` en `.env` o pega la key cuando el wizard la pida.
+2. Selecciona `Lightning AI`.
+3. Elige un modelo como `openai/gpt-5`, `openai/gpt-5-mini`, `openai/o3` o `lightning-ai/DeepSeek-V3.1`.
+
+Lightning AI usa el endpoint OpenAI-compatible `https://lightning.ai/api/v1/chat/completions`.
+
 ## Skills
 
 AgentLag puede leer skills instaladas desde:

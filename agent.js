@@ -81,6 +81,16 @@ async function createLLM(provider, model, apiKey, baseUrl) {
                 },
             });
         }
+        case "lightning": {
+            const { ChatOpenAI } = await import("@langchain/openai");
+            return new ChatOpenAI({
+                model,
+                apiKey: apiKey || process.env.LIGHTNING_API_KEY,
+                configuration: { baseURL: baseUrl || "https://lightning.ai/api/v1" },
+                temperature: 0.4,
+                maxTokens: 3600,
+            });
+        }
         case "deepseek": {
             const { ChatOpenAI } = await import("@langchain/openai");
             return new ChatOpenAI({
@@ -351,6 +361,7 @@ export async function buildAgent(overrides = {}) {
         const envVars = {
             groq: "GROQ_API_KEY", openai: "OPENAI_API_KEY",
             anthropic: "ANTHROPIC_API_KEY", openrouter: "OPENROUTER_API_KEY",
+            lightning: "LIGHTNING_API_KEY",
             deepseek: "DEEPSEEK_API_KEY", mistral: "MISTRAL_API_KEY",
             nvidia: "NVIDIA_API_KEY", meta: "TOGETHER_API_KEY",
         };
