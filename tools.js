@@ -6,6 +6,8 @@ import path from "path";
 import { promisify } from "util";
 import { createRequire } from "module";
 import { fileURLToPath } from "url";
+import os from "os";
+import { formatSkillsIndex, readSkill } from "./skills.js";
 
 // Cargar .env desde el directorio del proyecto
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -13,6 +15,10 @@ const { config } = createRequire(import.meta.url)("dotenv");
 config({ path: path.join(__dirname, ".env") });
 
 const execPromise = promisify(exec);
+
+function shellQuote(value) {
+  return `'${String(value).replace(/'/g, "'\\''")}'`;
+}
 
 // ─────────────────────────────────────────────
 // HERRAMIENTA: CREAR / SOBREESCRIBIR ARCHIVO
@@ -216,6 +222,98 @@ export const webSearch = tool(
 );
 
 // ─────────────────────────────────────────────
+// HERRAMIENTA: LISTAR SKILLS INSTALADAS
+// ─────────────────────────────────────────────
+export const listSkills = tool(
+  async () => formatSkillsIndex(process.cwd()),
+  {
+    name: "list_skills",
+    description: "Lista las skills instaladas en .agents/skills del proyecto y ~/.agents/skills globales.",
+    schema: z.object({}),
+  }
+);
+
+// ─────────────────────────────────────────────
+// HERRAMIENTA: LEER UNA SKILL
+// ─────────────────────────────────────────────
+export const readSkillTool = tool(
+  async ({ name }) => {
+    const skill = readSkill(name, process.cwd());
+    if (!skill) return `⚠️ No encontré la skill "${name}". Usa list_skills para ver las instaladas.`;
+    return `📘 ${skill.name} (${skill.scope})\nRuta: ${skill.path}\n\n${skill.content}`;
+  },
+  {
+    name: "read_skill",
+    description: "Lee el SKILL.md completo de una skill instalada para seguir sus instrucciones.",
+    schema: z.object({
+      name: z.string().describe("Nombre de la skill instalada, por ejemplo find-skills"),
+    }),
+  }
+);
+
+// ─────────────────────────────────────────────
+// HERRAMIENTA: BUSCAR SKILLS EN SKILLS.SH
+// ─────────────────────────────────────────────
+export const findSkills = tool(
+  async ({ query }) => {
+    try {
+      const { stdout, stderr } = await execPromise(`npx -y skills find ${shellQuote(query)}`, { timeout: 60000 });
+      return (stdout || stderr || "Sin resultados.").trim();
+    } catch (error) {
+      return `❌ Error buscando skills: ${error.message}`;
+    }
+  },
+  {
+    name: "find_skills",
+    description: "Busca skills en skills.sh con `npx skills find`. Úsala cuando el usuario pida una capacidad tipo 'necesito algo para X' o 'busca una skill para X'.",
+    schema: z.object({
+      query: z.string().describe("Términos de búsqueda, por ejemplo 'image optimization'"),
+    }),
+  }
+);
+
+// ─────────────────────────────────────────────
+// HERRAMIENTA: INSTALAR SKILLS
+// ─────────────────────────────────────────────
+export const addSkill = tool(
+  async ({ source, skill, global = false, copy = false }) => {
+    try {
+      const args = ["-y", "skills", "add", source, "-y"];
+      if (skill) args.push("--skill", skill);
+      if (global) args.push("--global");
+      if (copy) args.push("--copy");
+      const cmd = `npx ${args.map(shellQuote).join(" ")}`;
+      const targetDir = global ? path.join(os.homedir(), ".agents", "skills") : path.join(process.cwd(), ".agents", "skills");
+      const before = await fs.readdir(targetDir).catch(() => []);
+      const { stdout, stderr } = await execPromise(cmd, { timeout: 120000 });
+      const after = await fs.readdir(targetDir).catch(() => []);
+      const installed = after.filter(name => !before.includes(name));
+      if (installed.length > 0) {
+        for (const name of installed) {
+          const installedSkill = readSkill(name, process.cwd());
+          if (installedSkill?.content) {
+            return `${(stdout || stderr || "✅ Skill instalada.").trim()}\n\n📘 SKILL.md instalado (${installedSkill.name}):\n${installedSkill.content}`;
+          }
+        }
+      }
+      return (stdout || stderr || "✅ Skill instalada.").trim();
+    } catch (error) {
+      return `❌ Error instalando skill: ${error.message}`;
+    }
+  },
+  {
+    name: "add_skill",
+    description: "Instala una skill desde GitHub/skills.sh usando `npx skills add`. Requiere confirmación previa del usuario.",
+    schema: z.object({
+      source: z.string().describe("Fuente de la skill, por ejemplo 'vercel-labs/skills' o una URL de GitHub"),
+      skill: z.string().optional().describe("Nombre concreto de la skill a instalar si el repositorio contiene varias"),
+      global: z.boolean().optional().default(false).describe("true para instalar globalmente en ~/.agents/skills; false para el proyecto"),
+      copy: z.boolean().optional().default(false).describe("true para copiar en vez de symlink"),
+    }),
+  }
+);
+
+// ─────────────────────────────────────────────
 // EXPORTAR TODAS LAS HERRAMIENTAS
 // ─────────────────────────────────────────────
-export const tools = [createFile, readFile, editFile, listDirectory, searchFiles, runShell, webSearch];
+export const tools = [createFile, readFile, editFile, listDirectory, searchFiles, runShell, webSearch, listSkills, readSkillTool, findSkills, addSkill];

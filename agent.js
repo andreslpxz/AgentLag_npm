@@ -6,6 +6,7 @@ import { fileURLToPath } from "url";
 import path from "path";
 import fs from "fs";
 import os from "os";
+import { buildSkillContextForMessage, formatSkillsIndex } from "./skills.js";
 
 // ─── Cargar .env ──────────────────────────────────────────────────────────────
 const __agentDir = path.dirname(fileURLToPath(import.meta.url));
@@ -143,19 +144,45 @@ async function createLLM(provider, model, apiKey, baseUrl) {
 }
 
 // ─── System prompt ────────────────────────────────────────────────────────────
+function toolSummary() {
+    return tools.map(t => `- ${t.name.padEnd(14)} → ${t.description}`).join("\n");
+}
+
+function messageText(message) {
+    const content = message?.content;
+    if (typeof content === "string") return content;
+    if (Array.isArray(content)) {
+        return content
+            .map(part => typeof part === "string" ? part : part?.text || "")
+            .join("\n");
+    }
+    return "";
+}
+
+function latestUserText(messages) {
+    for (let i = messages.length - 1; i >= 0; i--) {
+        const message = messages[i];
+        if (message instanceof HumanMessage) return messageText(message);
+    }
+    return "";
+}
+
 function buildSystemPrompt(provider, model) {
     return new SystemMessage(
         `Eres AgentLag, una herramienta CLI interactiva para tareas de ingeniería de software.
 Modelo activo: ${model} (${provider}). Plataforma: ${process.platform}. Directorio actual: ${process.cwd()}.
 
 🛠️ HERRAMIENTAS DISPONIBLES:
-- create_file    → Crea o sobreescribe archivos con contenido completo.
-- read_file      → Lee el contenido de un archivo con números de línea.
-- edit_file      → Edita un archivo reemplazando texto existente (search & replace).
-- list_directory → Lista archivos de un DIRECTORIO (no un archivo). Usa '.' para el dir actual.
-- search_files   → Busca texto/regex en archivos del proyecto (como grep).
-- run_shell      → Ejecuta cualquier comando en la terminal (npm, git, python, bash, etc.).
-- web_search     → Busca en internet (Tavily AI) — resultados reales y actualizados.
+${toolSummary()}
+
+🧩 SKILLS INSTALADAS:
+${formatSkillsIndex(process.cwd())}
+
+REGLAS PARA SKILLS:
+- Cuando el usuario diga "necesito algo para X", "cómo hago X", "busca una skill", "instala una skill" o pida extender capacidades, usa las instrucciones de find-skills si está instalada.
+- Para descubrir skills, usa find_skills con una búsqueda corta en inglés o en los términos del usuario.
+- Resume las opciones encontradas y pregunta antes de instalar. Si el usuario acepta, usa add_skill.
+- Antes de aplicar una skill instalada, lee y sigue su SKILL.md si no fue inyectado automáticamente.
 
 📋 REGLAS DE COMPORTAMIENTO:
 - Responde SIEMPRE en el idioma que use el usuario.
@@ -181,13 +208,7 @@ Modelo activo: ${model} (${provider}). Plataforma: ${process.platform}. Director
 
 // ─── ReAct System Prompt (para modelos sin soporte de tools) ──────────────────
 function buildReActSystemPrompt(provider, model) {
-    const toolDescriptions = tools.map(t => {
-        const params = Object.entries(t.schema.shape).map(([k, v]) => {
-            const desc = v._def?.description || v.description || '';
-            return `    - ${k}: ${desc}`;
-        }).join('\n');
-        return `  ${t.name}: ${t.description}\n    Parámetros:\n${params}`;
-    }).join('\n\n');
+    const toolDescriptions = tools.map(t => `  ${t.name}: ${t.description}`).join('\n');
 
     return new SystemMessage(
         `Eres AgentLag, una herramienta CLI interactiva para tareas de ingeniería de software.
@@ -195,6 +216,14 @@ Modelo activo: ${model} (${provider}). Plataforma: ${process.platform}. Director
 
 🛠️ HERRAMIENTAS DISPONIBLES:
 ${toolDescriptions}
+
+🧩 SKILLS INSTALADAS:
+${formatSkillsIndex(process.cwd())}
+
+REGLAS PARA SKILLS:
+- Si el usuario pide una capacidad tipo "necesito algo para X", "cómo hago X" o "busca/instala una skill", usa find_skills.
+- Resume los resultados y pregunta antes de instalar con add_skill.
+- Antes de aplicar una skill instalada, lee y sigue su SKILL.md si no fue inyectado automáticamente.
 
 📋 CÓMO USAR HERRAMIENTAS:
 Cuando necesites usar una herramienta, responde EXACTAMENTE con este formato:
@@ -205,6 +234,19 @@ Action Input: {"param1": "valor1", "param2": "valor2"}
 
 Después de recibir el resultado (Observation), continúa razonando.
 Cuando tengas la respuesta final y NO necesites más herramientas, responde normalmente SIN Thought, Action ni Action Input.
+
+Parámetros JSON por herramienta:
+- create_file: {"filePath":"ruta","content":"contenido"}
+- read_file: {"filePath":"ruta"}
+- edit_file: {"filePath":"ruta","oldText":"texto exacto","newText":"nuevo texto"}
+- list_directory: {"dirPath":".","recursive":false}
+- search_files: {"pattern":"texto","dirPath":".","fileGlob":"*.js"}
+- run_shell: {"command":"comando"}
+- web_search: {"query":"consulta"}
+- list_skills: {}
+- read_skill: {"name":"find-skills"}
+- find_skills: {"query":"image optimization"}
+- add_skill: {"source":"owner/repo","skill":"nombre","global":false,"copy":false}
 
 ⚠️ REGLAS CRÍTICAS:
 - NUNCA repitas la misma acción si ya falló. Cambia de estrategia o responde sin herramientas.
@@ -244,6 +286,8 @@ function cleanReActResponse(text) {
         // Eliminar Action/Action Input/Observation residuales
         .replace(/\n\*{0,2}Action:?\*{0,2}[\s\S]*$/i, '')
         .replace(/\*{0,2}Observation:?\*{0,2}[\s\S]*$/im, '')
+        .replace(/<think>[\s\S]*?<\/think>/gi, '')
+        .replace(/^<think>[\s\S]*?(?=\n{2,}|Encontr|Puedo|¿|$)/i, '')
         .trim();
     // Limpiar markdown básico para terminal
     cleaned = stripMarkdown(cleaned);
@@ -330,7 +374,10 @@ export async function buildAgent(overrides = {}) {
     const systemPrompt = buildSystemPrompt(provider, model);
 
     const callModel = async (state) => {
-        const messages  = [systemPrompt, ...state.messages];
+        const skillContext = buildSkillContextForMessage(latestUserText(state.messages), process.cwd());
+        const messages  = skillContext
+            ? [systemPrompt, new SystemMessage(skillContext), ...state.messages]
+            : [systemPrompt, ...state.messages];
         const response  = await llmWithTools.invoke(messages);
         return { messages: [response] };
     };
@@ -393,7 +440,10 @@ function buildReActGraph(llm, provider, model) {
             ));
         }
 
-        const messages = [reactPrompt, ...processedMessages];
+        const skillContext = buildSkillContextForMessage(latestUserText(processedMessages), process.cwd());
+        const messages = skillContext
+            ? [reactPrompt, new SystemMessage(skillContext), ...processedMessages]
+            : [reactPrompt, ...processedMessages];
         const response = await llm.invoke(messages);
 
         const toolCall = parseToolCall(response.content);
