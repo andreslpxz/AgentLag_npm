@@ -8,6 +8,7 @@ import { spawn } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
+import { formatSkillsIndex, readSkill } from './skills.js';
 
 // ─── Persistencia ~/.agentlag/ ────────────────────────────────────────────────
 const CONFIG_DIR  = path.join(os.homedir(), '.agentlag');
@@ -141,6 +142,10 @@ function copyToClipboard(text) {
     });
 }
 
+function splitCommandArgs(text) {
+    return Array.from(text.matchAll(/"([^"]*)"|'([^']*)'|(\S+)/g), match => match[1] ?? match[2] ?? match[3]);
+}
+
 function runCommand(bin, args = [], opts = {}) {
     return new Promise((resolve) => {
         let proc;
@@ -240,8 +245,8 @@ function extractFailedGeneration(err) {
 // ─── Constantes ───────────────────────────────────────────────────────────────
 const SPINNERS       = ['✻', '✼', '✽', '✾', '✿'];
 const THINKING_WORDS = ['Thinking','Reasoning','Analyzing','Computing','Marinating','Levitating','Pondering','Brewing'];
-const TOOL_ICONS     = { create_file:'●', read_file:'●', edit_file:'●', list_directory:'●', search_files:'●', run_shell:'●', web_search:'●' };
-const NEEDS_CONFIRM  = new Set(['run_shell', 'create_file', 'edit_file']);
+const TOOL_ICONS     = { create_file:'●', read_file:'●', edit_file:'●', list_directory:'●', search_files:'●', run_shell:'●', web_search:'●', list_skills:'●', read_skill:'●', find_skills:'●', add_skill:'●' };
+const NEEDS_CONFIRM  = new Set(['run_shell', 'create_file', 'edit_file', 'add_skill']);
 
 const toolLabel = (n) => n?.replace(/_/g, ' ') ?? 'tool';
 const randWord  = () => THINKING_WORDS[Math.floor(Math.random() * THINKING_WORDS.length)];
@@ -572,6 +577,7 @@ const SLASH_COMMANDS = [
     { cmd:'/rename',      desc:['Renombrar la conversación activa'] },
     { cmd:'/resume',      desc:['Reanudar una conversación guardada por nombre'] },
     { cmd:'/sessions',    desc:['Listar conversaciones guardadas en el proyecto'] },
+    { cmd:'/skills',      desc:['Listar, leer, buscar o instalar skills de skills.sh'] },
     { cmd:'/version',     desc:['Mostrar la versión de AgentLag'] },
 ];
 
@@ -1072,6 +1078,77 @@ const App = ({ config: initCfg }) => {
                 const list = listConversations();
                 if (list.length === 0) say('Sin sesiones guardadas en este proyecto.');
                 else say(`💾 Sesiones:\n  ${list.join('\n  ')}\n\nUsa /resume <nombre> o /import <nombre>.`);
+                return true;
+            }
+            case '/skills': {
+                const [subRaw, ...subArgs] = rest;
+                const sub = (subRaw || 'list').toLowerCase();
+                const tail = subArgs.join(' ').trim();
+
+                if (sub === 'list') {
+                    say(`🧩 Skills instaladas:\n${formatSkillsIndex(process.cwd())}`);
+                    return true;
+                }
+
+                if (sub === 'read') {
+                    if (!tail) {
+                        say('Uso: /skills read <nombre>\nEjemplo: /skills read find-skills');
+                        return true;
+                    }
+                    const skill = readSkill(tail, process.cwd());
+                    if (!skill) say(`⚠ No encontré la skill "${tail}". Usa /skills list.`);
+                    else say(`📘 ${skill.name} (${skill.scope})\n${skill.path}\n\n${skill.content}`);
+                    return true;
+                }
+
+                if (sub === 'find' || sub === 'search') {
+                    if (!tail) {
+                        say('Uso: /skills find <consulta>\nEjemplo: /skills find image optimization');
+                        return true;
+                    }
+                    say(`⏳ Buscando skills: ${tail}`, true);
+                    runCommand('npx', ['-y', 'skills', 'find', tail]).then(({ code, output }) => {
+                        const clean = output.trim() || '(sin salida)';
+                        say(code === 0 ? clean : `❌ Error buscando skills:\n${clean}`);
+                    });
+                    return true;
+                }
+
+                if (sub === 'add' || sub === 'install') {
+                    const parsedArgs = splitCommandArgs(subArgs.join(' '));
+                    const source = parsedArgs[0];
+                    if (!source) {
+                        say('Uso: /skills add <source> [--skill nombre] [--global] [--copy]\nEjemplo: /skills add https://github.com/vercel-labs/skills --skill find-skills');
+                        return true;
+                    }
+                    const extra = parsedArgs.slice(1);
+                    say(`⏳ Instalando skill desde ${source}…`, true);
+                    runCommand('npx', ['-y', 'skills', 'add', source, '-y', ...extra]).then(({ code, output }) => {
+                        const clean = output.trim() || '(sin salida)';
+                        say(code === 0 ? clean : `❌ Error instalando skill:\n${clean}`);
+                        if (code === 0) rebuildAgentWith();
+                    });
+                    return true;
+                }
+
+                if (sub === 'check' || sub === 'update') {
+                    say(`⏳ Ejecutando skills ${sub}…`, true);
+                    runCommand('npx', ['-y', 'skills', sub, '-y']).then(({ code, output }) => {
+                        const clean = output.trim() || '(sin salida)';
+                        say(code === 0 ? clean : `❌ Error en skills ${sub}:\n${clean}`);
+                        if (code === 0) rebuildAgentWith();
+                    });
+                    return true;
+                }
+
+                say([
+                    'Uso:',
+                    '  /skills list',
+                    '  /skills read <nombre>',
+                    '  /skills find <consulta>',
+                    '  /skills add <source> [--skill nombre] [--global] [--copy]',
+                    '  /skills update',
+                ].join('\n'));
                 return true;
             }
             case '/resume':
