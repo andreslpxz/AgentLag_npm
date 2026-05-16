@@ -120,7 +120,12 @@ function scoreSkillForMessage(skill, message) {
       /\b(necesito algo|busca|buscar|encuentra|encontrar|instala|instalar|skill|skills|habilidad|extension|extensión)\b/.test(normalizedMessage) ||
       /\b(como|cómo)\s+(hago|puedo|hacer)\b/.test(normalizedMessage) ||
       /\b(can you|how do i|find a skill|is there a skill)\b/.test(normalizedMessage);
-    if (discoveryIntent) return 90;
+    if (discoveryIntent) return 95;
+  }
+
+  // Si el usuario pregunta por sus skills en general
+  if (normalizedMessage.includes('mis skills') || normalizedMessage.includes('tus skills') || normalizedMessage.includes('que puedes hacer')) {
+     if (normalizedName === 'find-skills') return 90;
   }
 
   const messageTokens = new Set(tokenize(message));

@@ -7,6 +7,8 @@ import path from "path";
 import fs from "fs";
 import os from "os";
 import { buildSkillContextForMessage, formatSkillsIndex } from "./skills.js";
+import { listMemory } from './memory_utils.js';
+
 
 // ─── Cargar .env ──────────────────────────────────────────────────────────────
 const __agentDir = path.dirname(fileURLToPath(import.meta.url));
@@ -185,6 +187,13 @@ Modelo activo: ${model} (${provider}). Plataforma: ${process.platform}. Director
 🛠️ HERRAMIENTAS DISPONIBLES:
 ${toolSummary()}
 
+🧠 MEMORIA (Datos guardados):
+${listMemory()}
+
+REGLAS PARA MEMORIA:
+- Usa manage_memory para guardar información importante (save) o listar (list) si el usuario te lo pide o crees que es relevante para el futuro.
+- Si el usuario menciona una preferencia o dato persistente, guárdalo automáticamente.
+
 🧩 SKILLS INSTALADAS:
 ${formatSkillsIndex(process.cwd())}
 
@@ -227,6 +236,13 @@ Modelo activo: ${model} (${provider}). Plataforma: ${process.platform}. Director
 🛠️ HERRAMIENTAS DISPONIBLES:
 ${toolDescriptions}
 
+🧠 MEMORIA (Datos guardados):
+${listMemory()}
+
+REGLAS PARA MEMORIA:
+- Usa manage_memory para guardar información importante (save) o listar (list) si el usuario te lo pide o crees que es relevante para el futuro.
+- Si el usuario menciona una preferencia o dato persistente, guárdalo automáticamente.
+
 🧩 SKILLS INSTALADAS:
 ${formatSkillsIndex(process.cwd())}
 
@@ -255,6 +271,7 @@ Parámetros JSON por herramienta:
 - web_search: {"query":"consulta"}
 - list_skills: {}
 - read_skill: {"name":"find-skills"}
+- manage_memory: {"action":"save","key":"tema","value":"ejemplo"}
 - find_skills: {"query":"image optimization"}
 - add_skill: {"source":"owner/repo","skill":"nombre","global":false,"copy":false}
 
@@ -320,24 +337,49 @@ export function stripMarkdown(text) {
 function parseToolCall(text) {
     if (!text || typeof text !== 'string') return null;
 
-    // Soportar Action con o sin markdown: Action:, **Action:**, **Action:**
+    // 1. Intento formato estándar: Action: [name] \n Action Input: [json]
     const actionMatch = text.match(/\*{0,2}Action:?\*{0,2}\s*(\S+)/);
-    if (!actionMatch) return null;
-
-    const name = actionMatch[1].replace(/\*+/g, '').trim();
-    const validNames = tools.map(t => t.name);
-    if (!validNames.includes(name)) return null;
-
-    // Soportar Action Input con o sin markdown
-    const inputMatch = text.match(/\*{0,2}Action Input:?\*{0,2}\s*(\{[\s\S]*?\})/);
-    if (!inputMatch) return null;
-
-    try {
-        const args = JSON.parse(inputMatch[1].trim());
-        return { name, args, id: `react_${Date.now()}_${Math.random().toString(36).slice(2, 8)}` };
-    } catch {
-        return null;
+    if (actionMatch) {
+        const name = actionMatch[1].replace(/\*+/g, '').trim();
+        const validNames = tools.map(t => t.name);
+        if (validNames.includes(name)) {
+            const inputMatch = text.match(/\*{0,2}Action Input:?\*{0,2}\s*(\{[\s\S]*?\})/);
+            if (inputMatch) {
+                try {
+                    const args = JSON.parse(inputMatch[1].trim());
+                    return { name, args, id: `react_${Date.now()}_${Math.random().toString(36).slice(2, 8)}` };
+                } catch {}
+            }
+        }
     }
+
+    // 2. Intento formato JSON puro (a veces los modelos lo escupen así si fallan las tools nativas)
+    try {
+        const start = text.indexOf('{');
+        const end = text.lastIndexOf('}');
+        if (start !== -1 && end !== -1 && end > start) {
+            const jsonStr = text.slice(start, end + 1);
+            const parsed = JSON.parse(jsonStr);
+            // Formato OpenAI/LangChain: {name, args}
+            if (parsed.name && parsed.args && tools.some(t => t.name === parsed.name)) {
+                return { name: parsed.name, args: parsed.args, id: `react_${Date.now()}` };
+            }
+            // Formato simplificado: {tool: name, parameters: {}}
+            const toolName = parsed.tool || parsed.action || parsed.call;
+            const toolArgs = parsed.parameters || parsed.args || parsed.input || parsed;
+            if (toolName && tools.some(t => t.name === toolName)) {
+                return { name: toolName, args: typeof toolArgs === 'object' ? toolArgs : {}, id: `react_${Date.now()}` };
+            }
+            // Heurística para Lightning AI / otros (ej: {"query":"..."})
+            if (Object.keys(parsed).length > 0 && !parsed.name) {
+                if (parsed.query && !parsed.command) return { name: 'find_skills', args: parsed, id: `react_${Date.now()}` };
+                if (parsed.command) return { name: 'run_shell', args: parsed, id: `react_${Date.now()}` };
+                if (parsed.filePath || parsed.path) return { name: 'read_file', args: parsed, id: `react_${Date.now()}` };
+            }
+        }
+    } catch {}
+
+    return null;
 }
 
 // ─── buildAgent ───────────────────────────────────────────────────────────────
@@ -522,4 +564,17 @@ function buildReActGraph(llm, provider, model) {
         return originalInvoke(...args);
     };
     return compiled;
+}
+
+// ─── Salvamento de tool calls manuales (para modelos que no soportan tools) ────
+export function trySalvageToolCall(message) {
+    if (!message || typeof message.content !== 'string') return null;
+    const call = parseToolCall(message.content);
+    if (call) {
+        return {
+            ...message,
+            tool_calls: [call]
+        };
+    }
+    return null;
 }

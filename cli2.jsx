@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { render, Text, Box, useInput, Static, Newline, useStdout } from 'ink';
-import { buildAgent, stripMarkdown } from './agent.js';
+import { buildAgent, stripMarkdown, trySalvageToolCall } from './agent.js';
 import { fetchOllamaModels, isOllamaRunning } from './ollama_utils.js';
 import { HumanMessage, AIMessage } from '@langchain/core/messages';
 import { spawn } from 'child_process';
@@ -1549,7 +1549,13 @@ const App = ({ config: initCfg }) => {
                 allChunks.push(chunk);
 
                 if (chunk.agent) {
-                    const last = chunk.agent.messages?.at(-1);
+                    let last = chunk.agent.messages?.at(-1);
+                    // Salvamento preventivo: si el modelo no dio tool_calls pero el contenido parece uno
+                    if (last && (!last.tool_calls || last.tool_calls.length === 0)) {
+                        const salvaged = trySalvageToolCall(last);
+                        if (salvaged) last = salvaged;
+                    }
+
                     if (last?.tool_calls?.length > 0) {
                         const tc = last.tool_calls[0];
                         pendingTC = { name:tc.name, args:tc.args };
@@ -1618,7 +1624,10 @@ const App = ({ config: initCfg }) => {
                     if (c[nk]?.messages) allMsgs.push(...c[nk].messages);
             msgRef.current=[...msgRef.current,...allMsgs];
 
-            if (responseText) setStaticHistory(prev=>[...prev,{type:'assistant',text:responseText}]);
+            if (responseText) {
+                const cleaned = stripMarkdown(responseText);
+                setStaticHistory(prev=>[...prev,{type:'assistant',text:cleaned}]);
+            }
 
         } catch(err) {
             if (isToolUnsupportedError(err)) {
@@ -1712,7 +1721,10 @@ const App = ({ config: initCfg }) => {
                         for (const nk of ['agent','tools'])
                             if (c[nk]?.messages) retryMsgs.push(...c[nk].messages);
                     msgRef.current=[...msgRef.current,...retryMsgs];
-                    if (retryText) setStaticHistory(prev=>[...prev,{type:'assistant',text:retryText}]);
+                    if (retryText) {
+                        const cleaned = stripMarkdown(retryText);
+                        setStaticHistory(prev=>[...prev,{type:'assistant',text:cleaned}]);
+                    }
                 } catch (reactErr) {
                     setStaticHistory(prev=>[...prev,{type:'assistant',text:`❌ Error (ReAct): ${reactErr.message}`}]);
                 }
