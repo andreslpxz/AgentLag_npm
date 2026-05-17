@@ -2,7 +2,7 @@ import fs from "fs";
 import path from "path";
 import os from "os";
 
-const MAX_SKILL_CHARS = 1200;
+const MAX_SKILL_CHARS = 2500;
 const STOPWORDS = new Set([
   "para", "con", "una", "uno", "las", "los", "del", "que", "como", "cómo",
   "the", "and", "for", "with", "that", "this", "when", "user", "users",
@@ -19,7 +19,7 @@ function normalizeText(value) {
 function tokenize(value) {
   return normalizeText(value)
     .split(/[^a-z0-9]+/i)
-    .filter(token => token.length >= 4 && !STOPWORDS.has(token));
+    .filter(token => token.length >= 3 && !STOPWORDS.has(token));
 }
 
 function unique(values) {
@@ -123,7 +123,6 @@ function scoreSkillForMessage(skill, message) {
     if (discoveryIntent) return 95;
   }
 
-  // Si el usuario pregunta por sus skills en general
   if (normalizedMessage.includes('mis skills') || normalizedMessage.includes('tus skills') || normalizedMessage.includes('que puedes hacer')) {
      if (normalizedName === 'find-skills') return 90;
   }
@@ -132,15 +131,21 @@ function scoreSkillForMessage(skill, message) {
   const skillTokens = unique([...tokenize(skill.name), ...tokenize(skill.description)]);
   let score = 0;
   for (const token of skillTokens) {
-    if (messageTokens.has(token)) score += 10;
+    if (messageTokens.has(token)) score += 15;
   }
+
+  const descriptionKeywords = tokenize(skill.description);
+  for (const kw of descriptionKeywords) {
+      if (normalizedMessage.includes(kw)) score += 5;
+  }
+
   return score;
 }
 
-export function selectSkillsForMessage(message, { cwd = process.cwd(), limit = 2 } = {}) {
+export function selectSkillsForMessage(message, { cwd = process.cwd(), limit = 3 } = {}) {
   return listInstalledSkills({ includeContent: true, cwd })
     .map(skill => ({ skill, score: scoreSkillForMessage(skill, message) }))
-    .filter(item => item.score > 0)
+    .filter(item => item.score > 15)
     .sort((a, b) => b.score - a.score)
     .slice(0, limit)
     .map(item => item.skill);
