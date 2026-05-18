@@ -8,6 +8,7 @@ import { createRequire } from "module";
 import { fileURLToPath } from "url";
 import os from "os";
 import { formatSkillsIndex, readSkill } from "./skills.js";
+import { addToMemory, listMemory } from "./memory_utils.js";
 
 // Cargar .env desde el directorio del proyecto
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -15,9 +16,52 @@ const { config } = createRequire(import.meta.url)("dotenv");
 config({ path: path.join(__dirname, ".env") });
 
 const execPromise = promisify(exec);
+const DEFAULT_SHELL_TIMEOUT_MS = 60000;
+const MAX_SHELL_TIMEOUT_MS = 10 * 60 * 1000;
+const MAX_DIFF_CHARS = 12000;
 
 function shellQuote(value) {
   return `'${String(value).replace(/'/g, "'\\''")}'`;
+}
+
+function countOccurrences(content, needle) {
+  if (!needle) return 0;
+  let count = 0;
+  let index = 0;
+  while ((index = content.indexOf(needle, index)) !== -1) {
+    count++;
+    index += needle.length;
+  }
+  return count;
+}
+
+function clampTimeout(timeoutMs) {
+  const parsed = Number(timeoutMs);
+  if (!Number.isFinite(parsed) || parsed <= 0) return DEFAULT_SHELL_TIMEOUT_MS;
+  return Math.min(Math.floor(parsed), MAX_SHELL_TIMEOUT_MS);
+}
+
+async function buildFileDiff(filePath, before, after) {
+  const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "agentlag-diff-"));
+  const beforePath = path.join(tmpDir, "before");
+  const afterPath = path.join(tmpDir, "after");
+  await fs.writeFile(beforePath, before, "utf8");
+  await fs.writeFile(afterPath, after, "utf8");
+  try {
+    const cmd = `diff -u --label ${shellQuote(`${filePath} (before)`)} --label ${shellQuote(`${filePath} (after)`)} ${shellQuote(beforePath)} ${shellQuote(afterPath)}`;
+    const { stdout } = await execPromise(cmd, { timeout: 10000 });
+    return stdout;
+  } catch (error) {
+    return error.stdout || "";
+  } finally {
+    await fs.rm(tmpDir, { recursive: true, force: true });
+  }
+}
+
+function formatDiff(diff) {
+  if (!diff.trim()) return "Sin cambios.";
+  if (diff.length <= MAX_DIFF_CHARS) return diff;
+  return `${diff.slice(0, MAX_DIFF_CHARS)}\n... diff truncado (${diff.length - MAX_DIFF_CHARS} caracteres restantes).`;
 }
 
 // ─────────────────────────────────────────────
@@ -97,12 +141,17 @@ export const editFile = tool(
   async ({ filePath, oldText, newText }) => {
     try {
       const content = await fs.readFile(filePath, "utf8");
-      if (!content.includes(oldText)) {
+      const occurrences = countOccurrences(content, oldText);
+      if (occurrences === 0) {
         return `❌ No se encontró el texto a reemplazar en ${filePath}. Usa read_file primero para ver el contenido exacto.`;
+      }
+      if (occurrences > 1) {
+        return `❌ Reemplazo ambiguo: el texto aparece ${occurrences} veces en ${filePath}. Amplía oldText hasta que sea único.`;
       }
       const updated = content.replace(oldText, newText);
       await fs.writeFile(filePath, updated, "utf8");
-      return `✅ Archivo editado: ${filePath}\n   Reemplazado ${oldText.split('\n').length} línea(s).`;
+      const diff = await buildFileDiff(filePath, content, updated);
+      return `✅ Archivo editado: ${filePath}\n   Reemplazado ${oldText.split('\n').length} línea(s).\n\nDiff:\n${formatDiff(diff)}`;
     } catch (error) {
       return `❌ Error al editar: ${error.message}`;
     }
@@ -121,18 +170,30 @@ export const editFile = tool(
 // ─────────────────────────────────────────────
 // HERRAMIENTA: BUSCAR EN ARCHIVOS (GREP)
 // ─────────────────────────────────────────────
+async function searchInFilesImpl({ pattern, dirPath = ".", fileGlob, literal = false, maxResults = 50 }) {
+  try {
+    const grepArgs = [
+      "-RIn",
+      "--exclude-dir=.git",
+      "--exclude-dir=node_modules",
+      "--exclude-dir=dist",
+      "--exclude-dir=build",
+    ];
+    if (literal) grepArgs.push("-F");
+    if (fileGlob) grepArgs.push(`--include=${shellQuote(fileGlob)}`);
+    const limit = Math.min(Math.max(Number(maxResults) || 50, 1), 200);
+    const cmd = `grep ${grepArgs.join(" ")} -- ${shellQuote(pattern)} ${shellQuote(dirPath)} 2>/dev/null | head -${limit}`;
+    const { stdout, stderr } = await execPromise(cmd, { timeout: 15000 });
+    if (!stdout.trim()) return `⚠️ No se encontraron coincidencias para "${pattern}".`;
+    return `🔍 Resultados para "${pattern}":\n${stdout}`;
+  } catch (error) {
+    if (error.code === 1) return `⚠️ No se encontraron coincidencias para "${pattern}".`;
+    return `❌ Error al buscar: ${error.message}`;
+  }
+}
+
 export const searchFiles = tool(
-  async ({ pattern, dirPath = ".", fileGlob }) => {
-    try {
-      let cmd = `grep -rn --include='${fileGlob || '*'}' "${pattern}" "${dirPath}" 2>/dev/null | head -50`;
-      const { stdout, stderr } = await execPromise(cmd, { timeout: 15000 });
-      if (!stdout.trim()) return `⚠️ No se encontraron coincidencias para "${pattern}".`;
-      return `🔍 Resultados para "${pattern}":\n${stdout}`;
-    } catch (error) {
-      if (error.code === 1) return `⚠️ No se encontraron coincidencias para "${pattern}".`;
-      return `❌ Error al buscar: ${error.message}`;
-    }
-  },
+  searchInFilesImpl,
   {
     name: "search_files",
     description: "Busca un patrón de texto en archivos del proyecto (como grep). Útil para encontrar funciones, variables, imports, o cualquier texto en el código.",
@@ -140,6 +201,70 @@ export const searchFiles = tool(
       pattern: z.string().describe("Texto o regex a buscar"),
       dirPath: z.string().optional().default(".").describe("Directorio donde buscar (default: directorio actual)"),
       fileGlob: z.string().optional().describe("Filtrar por tipo de archivo (ej: '*.js', '*.py', '*.jsx')"),
+      literal: z.boolean().optional().default(false).describe("true para búsqueda literal en vez de regex"),
+      maxResults: z.number().int().positive().max(200).optional().default(50).describe("Máximo de coincidencias a devolver"),
+    }),
+  }
+);
+
+export const searchInFiles = tool(
+  searchInFilesImpl,
+  {
+    name: "search_in_files",
+    description: "Alias profesional de grep/search para buscar texto literal o regex en todo el repo.",
+    schema: z.object({
+      pattern: z.string().describe("Texto o regex a buscar"),
+      dirPath: z.string().optional().default(".").describe("Directorio donde buscar"),
+      fileGlob: z.string().optional().describe("Filtrar por glob, ej: '*.js'"),
+      literal: z.boolean().optional().default(false).describe("true para búsqueda literal"),
+      maxResults: z.number().int().positive().max(200).optional().default(50).describe("Máximo de resultados"),
+    }),
+  }
+);
+
+// ─────────────────────────────────────────────
+// HERRAMIENTA: MOSTRAR DIFF
+// ─────────────────────────────────────────────
+export const showDiff = tool(
+  async ({ filePath }) => {
+    try {
+      const fileArg = filePath ? ` -- ${shellQuote(filePath)}` : "";
+      const { stdout, stderr } = await execPromise(`git diff --no-ext-diff --no-color${fileArg}`, { timeout: 15000 });
+      const output = stdout || stderr || "";
+      return output.trim() ? `Diff actual:\n${formatDiff(output)}` : "Sin cambios en git diff.";
+    } catch (error) {
+      return `❌ Error al mostrar diff: ${error.message}`;
+    }
+  },
+  {
+    name: "show_diff",
+    description: "Muestra el diff git actual, opcionalmente limitado a un archivo. Úsala después de editar para revisar cambios exactos.",
+    schema: z.object({
+      filePath: z.string().optional().describe("Archivo opcional para limitar el diff"),
+    }),
+  }
+);
+
+// ─────────────────────────────────────────────
+// HERRAMIENTA: APLICAR PATCH
+// ─────────────────────────────────────────────
+export const applyPatchTool = tool(
+  async ({ patch, timeoutMs = 15000 }) => {
+    try {
+      const command = `python3 - <<'PY'\nimport subprocess\npatch = ${JSON.stringify(patch)}\nproc = subprocess.run(['git', 'apply', '--whitespace=fix', '-'], input=patch, text=True, capture_output=True, timeout=${Math.ceil(clampTimeout(timeoutMs) / 1000)})\nprint(proc.stdout, end='')\nprint(proc.stderr, end='')\nraise SystemExit(proc.returncode)\nPY`;
+      const { stdout, stderr } = await execPromise(command, { timeout: clampTimeout(timeoutMs) + 1000 });
+      return (stdout || stderr || "✅ Patch aplicado.").trim();
+    } catch (error) {
+      const output = [error.stdout, error.stderr].filter(Boolean).join("\n").trim();
+      return `❌ Error aplicando patch: ${output || error.message}`;
+    }
+  },
+  {
+    name: "apply_patch",
+    description: "Aplica un patch unificado con git apply. Útil para cambios multiarchivo preservando un diff explícito.",
+    schema: z.object({
+      patch: z.string().describe("Patch unificado completo"),
+      timeoutMs: z.number().int().positive().max(MAX_SHELL_TIMEOUT_MS).optional().default(15000).describe("Timeout en milisegundos"),
     }),
   }
 );
@@ -148,9 +273,9 @@ export const searchFiles = tool(
 // HERRAMIENTA: EJECUTAR SHELL
 // ─────────────────────────────────────────────
 export const runShell = tool(
-  async ({ command }) => {
+  async ({ command, timeoutMs = DEFAULT_SHELL_TIMEOUT_MS }) => {
     try {
-      const opts = { timeout: 60000 };
+      const opts = { timeout: clampTimeout(timeoutMs) };
       const { stdout, stderr } = await execPromise(command, opts);
       let output = "";
       if (stdout) output += `STDOUT:\n${stdout}\n`;
@@ -162,9 +287,10 @@ export const runShell = tool(
   },
   {
     name: "run_shell",
-    description: "Ejecuta un comando en la terminal de Termux/Linux y devuelve su salida. Útil para instalar paquetes, ejecutar scripts, git, npm, compilar código, etc.",
+    description: "Ejecuta un comando en la terminal de Termux/Linux y devuelve su salida. Acepta timeoutMs para comandos largos o peligrosos.",
     schema: z.object({
       command: z.string().describe("Comando de shell a ejecutar. Para cambiar directorio usa 'cd /ruta && comando'."),
+      timeoutMs: z.number().int().positive().max(MAX_SHELL_TIMEOUT_MS).optional().default(DEFAULT_SHELL_TIMEOUT_MS).describe("Timeout configurable en ms (máx. 600000)."),
     }),
   }
 );
@@ -317,18 +443,13 @@ export const addSkill = tool(
 // EXPORTAR TODAS LAS HERRAMIENTAS
 // ─────────────────────────────────────────────
 
-// ─────────────────────────────────────────────
-// HERRAMIENTA: GESTIONAR MEMORIA (MEMORIA INFINITA)
-// ─────────────────────────────────────────────
-import { addToMemory, listMemory } from './memory_utils.js';
-
 export const manageMemory = tool(
-  async ({ action, key, value }) => {
+  async ({ action, key, value, project, context, ttlDays }) => {
     try {
       if (action === 'save') {
         if (!key || !value) return "❌ Debes proporcionar clave (key) y valor (value) para guardar.";
-        addToMemory(key, value);
-        return `✅ Guardado en memoria: "${key}"`;
+        addToMemory(key, value, { project, context, ttlDays });
+        return `✅ Guardado en memoria: "${key}" con timestamp y proyecto.`;
       }
       if (action === 'list') {
         const mem = listMemory();
@@ -346,10 +467,13 @@ export const manageMemory = tool(
       action: z.enum(['save', 'list']).describe("Acción a realizar: 'save' para guardar, 'list' para ver todo."),
       key: z.string().optional().describe("Clave del dato a guardar (ej: 'preferencia_estilo')"),
       value: z.string().optional().describe("Valor o contenido a recordar."),
+      project: z.string().optional().describe("Proyecto o repo asociado a esta memoria."),
+      context: z.string().optional().describe("Contexto breve de por qué se guardó."),
+      ttlDays: z.number().positive().optional().describe("Días hasta expirar la entrada."),
     }),
   }
 );
 
 // Actualizar la lista de herramientas exportadas (sobrescribiendo la línea anterior si es necesario)
 // Nota: como ya exporté 'tools' antes, voy a re-declararla al final del archivo.
-export const tools = [createFile, readFile, editFile, listDirectory, searchFiles, runShell, webSearch, listSkills, readSkillTool, findSkills, addSkill, manageMemory];
+export const tools = [createFile, readFile, editFile, listDirectory, searchFiles, searchInFiles, showDiff, applyPatchTool, runShell, webSearch, listSkills, readSkillTool, findSkills, addSkill, manageMemory];
