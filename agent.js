@@ -41,7 +41,7 @@ async function createLLM(provider, model, apiKey, baseUrl) {
                 model,
                 apiKey: apiKey || process.env.GROQ_API_KEY,
                 temperature: 0.4,
-                maxTokens: 3600,
+                maxTokens: 8192,
             });
         }
         case "openai": {
@@ -50,7 +50,7 @@ async function createLLM(provider, model, apiKey, baseUrl) {
                 model,
                 apiKey: apiKey || process.env.OPENAI_API_KEY,
                 temperature: 0.4,
-                maxTokens: 3600,
+                maxTokens: 8192,
             });
         }
         case "anthropic": {
@@ -58,7 +58,7 @@ async function createLLM(provider, model, apiKey, baseUrl) {
             return new ChatAnthropic({
                 model,
                 apiKey: apiKey || process.env.ANTHROPIC_API_KEY,
-                maxTokens: 3600,
+                maxTokens: 8192,
             });
         }
         case "openrouter": {
@@ -74,7 +74,7 @@ async function createLLM(provider, model, apiKey, baseUrl) {
                     },
                 },
                 temperature: 0.4,
-                maxTokens: 3600,
+                maxTokens: 8192,
                 // Pide a OpenRouter rutar solo a providers que soporten function-calling.
                 modelKwargs: {
                     provider: { require_parameters: true },
@@ -88,7 +88,7 @@ async function createLLM(provider, model, apiKey, baseUrl) {
                 apiKey: apiKey || process.env.LIGHTNING_API_KEY,
                 configuration: { baseURL: baseUrl || "https://lightning.ai/api/v1" },
                 temperature: 0.4,
-                maxTokens: 3600,
+                maxTokens: 8192,
             });
         }
         case "deepseek": {
@@ -98,7 +98,7 @@ async function createLLM(provider, model, apiKey, baseUrl) {
                 apiKey: apiKey || process.env.DEEPSEEK_API_KEY,
                 configuration: { baseURL: "https://api.deepseek.com/v1" },
                 temperature: 0.4,
-                maxTokens: 3600,
+                maxTokens: 8192,
             });
         }
         case "mistral": {
@@ -107,7 +107,7 @@ async function createLLM(provider, model, apiKey, baseUrl) {
                 model,
                 apiKey: apiKey || process.env.MISTRAL_API_KEY,
                 temperature: 0.4,
-                maxTokens: 3600,
+                maxTokens: 8192,
             });
         }
         case "nvidia": {
@@ -117,7 +117,7 @@ async function createLLM(provider, model, apiKey, baseUrl) {
                 apiKey: apiKey || process.env.NVIDIA_API_KEY,
                 configuration: { baseURL: "https://integrate.api.nvidia.com/v1" },
                 temperature: 0.4,
-                maxTokens: 3600,
+                maxTokens: 8192,
             });
         }
         case "huggingface": {
@@ -143,7 +143,7 @@ async function createLLM(provider, model, apiKey, baseUrl) {
                 apiKey: apiKey || process.env.TOGETHER_API_KEY || process.env.META_API_KEY,
                 configuration: { baseURL: "https://api.together.xyz/v1" },
                 temperature: 0.4,
-                maxTokens: 3600,
+                maxTokens: 8192,
             });
         }
         default:
@@ -212,10 +212,10 @@ REGLAS PARA SKILLS:
 - Al terminar una tarea, resume solo el resultado esencial.
 
 🎯 ESPECIALIDADES:
-- Node.js, npm, LangChain/LangGraph, React, Python
-- Desarrollo en Termux/Android
-- Scripts de automatización, bash, git
-- Depuración y resolución de errores`
+- Desarrollo Full-Stack de IA (Node.js, Python, React y Arquitecturas LangGraph)
+- Despliegue Multiplataforma Ecosistémico (Android/Termux, Linux y Windows)
+- Automatización Avanzada de Procesos (RPA, Scripts Multi-entorno y Control de Versiones)
+- Resiliencia del Sistema (Autodepuración en Caliente y Resolución Autónoma de Errores)`
     );
 }
 
