@@ -3,6 +3,8 @@ import path from "path";
 import os from "os";
 
 const MAX_SKILL_CHARS = 2500;
+const CACHE_TTL_MS = 5000;
+let skillsCache = new Map();
 const STOPWORDS = new Set([
   "para", "con", "una", "uno", "las", "los", "del", "que", "como", "cómo",
   "the", "and", "for", "with", "that", "this", "when", "user", "users",
@@ -33,6 +35,14 @@ export function skillRoots(cwd = process.cwd()) {
   ]);
 }
 
+export function clearSkillsCache() {
+  skillsCache = new Map();
+}
+
+function cacheKey({ includeContent, cwd }) {
+  return JSON.stringify({ includeContent: Boolean(includeContent), cwd: path.resolve(cwd) });
+}
+
 function parseSkillMarkdown(content, fallbackName) {
   const frontmatter = content.match(/^---\n([\s\S]*?)\n---\n?/);
   const meta = {};
@@ -49,6 +59,12 @@ function parseSkillMarkdown(content, fallbackName) {
 }
 
 export function listInstalledSkills({ includeContent = false, cwd = process.cwd() } = {}) {
+  const key = cacheKey({ includeContent, cwd });
+  const cached = skillsCache.get(key);
+  if (cached && Date.now() - cached.createdAt < CACHE_TTL_MS) {
+    return cached.skills.map(skill => ({ ...skill }));
+  }
+
   const found = [];
   const seen = new Set();
 
@@ -98,7 +114,9 @@ export function listInstalledSkills({ includeContent = false, cwd = process.cwd(
     }
   }
 
-  return found.sort((a, b) => a.name.localeCompare(b.name));
+  const skills = found.sort((a, b) => a.name.localeCompare(b.name));
+  skillsCache.set(key, { createdAt: Date.now(), skills });
+  return skills.map(skill => ({ ...skill }));
 }
 
 export function readSkill(name, cwd = process.cwd()) {

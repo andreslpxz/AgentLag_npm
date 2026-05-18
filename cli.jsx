@@ -8,7 +8,7 @@ import { spawn } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
-import { formatSkillsIndex, readSkill } from './skills.js';
+import { clearSkillsCache, formatSkillsIndex, readSkill } from './skills.js';
 
 // ─── Persistencia ~/.agentlag/ ────────────────────────────────────────────────
 const CONFIG_DIR  = path.join(os.homedir(), '.agentlag');
@@ -245,8 +245,8 @@ function extractFailedGeneration(err) {
 // ─── Constantes ───────────────────────────────────────────────────────────────
 const SPINNERS       = ['✻', '✼', '✽', '✾', '✿'];
 const THINKING_WORDS = ['Thinking','Reasoning','Analyzing','Computing','Marinating','Levitating','Pondering','Brewing'];
-const TOOL_ICONS     = { create_file:'●', read_file:'●', edit_file:'●', list_directory:'●', search_files:'●', run_shell:'●', web_search:'●', list_skills:'●', read_skill:'●', find_skills:'●', add_skill:'●' };
-const NEEDS_CONFIRM  = new Set(['run_shell', 'create_file', 'edit_file', 'add_skill']);
+const TOOL_ICONS     = { create_file:'●', read_file:'●', edit_file:'●', list_directory:'●', search_files:'●', search_in_files:'●', show_diff:'●', apply_patch:'●', run_shell:'●', web_search:'●', list_skills:'●', read_skill:'●', find_skills:'●', add_skill:'●' };
+const NEEDS_CONFIRM  = new Set(['run_shell', 'create_file', 'edit_file', 'apply_patch', 'add_skill']);
 
 const toolLabel = (n) => n?.replace(/_/g, ' ') ?? 'tool';
 const randWord  = () => THINKING_WORDS[Math.floor(Math.random() * THINKING_WORDS.length)];
@@ -1128,7 +1128,10 @@ const App = ({ config: initCfg }) => {
                     runCommand('npx', ['-y', 'skills', 'add', source, '-y', ...extra]).then(({ code, output }) => {
                         const clean = output.trim() || '(sin salida)';
                         say(code === 0 ? clean : `❌ Error instalando skill:\n${clean}`);
-                        if (code === 0) rebuildAgentWith();
+                        if (code === 0) {
+                            clearSkillsCache();
+                            rebuildAgentWith();
+                        }
                     });
                     return true;
                 }
@@ -1138,7 +1141,10 @@ const App = ({ config: initCfg }) => {
                     runCommand('npx', ['-y', 'skills', sub, '-y']).then(({ code, output }) => {
                         const clean = output.trim() || '(sin salida)';
                         say(code === 0 ? clean : `❌ Error en skills ${sub}:\n${clean}`);
-                        if (code === 0) rebuildAgentWith();
+                        if (code === 0) {
+                            clearSkillsCache();
+                            rebuildAgentWith();
+                        }
                     });
                     return true;
                 }

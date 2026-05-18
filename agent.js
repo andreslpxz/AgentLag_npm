@@ -30,6 +30,14 @@ const AgentState = Annotation.Root({
         reducer: (x, y) => x.concat(y),
         default: () => [],
     }),
+    reactIterations: Annotation({
+        reducer: (_x, y) => y,
+        default: () => 0,
+    }),
+    reactErrors: Annotation({
+        reducer: (_x, y) => y,
+        default: () => ({}),
+    }),
 });
 
 // ─── Crear LLM según proveedor ────────────────────────────────────────────────
@@ -418,18 +426,18 @@ function buildReActGraph(llm, provider, model) {
         toolMap[t.name] = t;
     }
 
-    let iterationCount = 0;
-    let errorTracker = {};
-
     const callModelReAct = async (state) => {
-        iterationCount++;
+        const iterationCount = (state.reactIterations || 0) + 1;
+        const errorTracker = state.reactErrors || {};
 
         if (iterationCount > MAX_REACT_ITERATIONS) {
-            iterationCount = 0;
-            errorTracker = {};
-            return { messages: [new AIMessage({
-                content: "He alcanzado el límite de pasos. Aquí está lo que logré hacer hasta ahora. ¿Necesitas que continúe con algo específico?"
-            })] };
+            return {
+                messages: [new AIMessage({
+                    content: "He alcanzado el límite de pasos. Aquí está lo que logré hacer hasta ahora. ¿Necesitas que continúe con algo específico?"
+                })],
+                reactIterations: 0,
+                reactErrors: {},
+            };
         }
 
         const processedMessages = state.messages.map(m => {
@@ -464,18 +472,21 @@ function buildReActGraph(llm, provider, model) {
                     id: toolCall.id,
                 }],
             });
-            return { messages: [aiMsg] };
+            return { messages: [aiMsg], reactIterations: iterationCount };
         }
 
-        iterationCount = 0;
-        errorTracker = {};
         const cleaned = cleanReActResponse(response.content);
-        return { messages: [new AIMessage({ content: cleaned })] };
+        return {
+            messages: [new AIMessage({ content: cleaned })],
+            reactIterations: 0,
+            reactErrors: {},
+        };
     };
 
     const originalToolNode = new ToolNode(tools);
     const trackedToolNode = async (state) => {
         const result = await originalToolNode.invoke(state);
+        const nextErrors = { ...(state.reactErrors || {}) };
         const msgs = result.messages || [];
         for (const m of msgs) {
             if (m instanceof ToolMessage && m.content && typeof m.content === 'string') {
@@ -486,13 +497,13 @@ function buildReActGraph(llm, provider, model) {
                         const call = lastAiMsg.tool_calls.find(tc => tc.id === toolCallId);
                         if (call) {
                             const callKey = `${call.name}`;
-                            errorTracker[callKey] = (errorTracker[callKey] || 0) + 1;
+                            nextErrors[callKey] = (nextErrors[callKey] || 0) + 1;
                         }
                     }
                 }
             }
         }
-        return result;
+        return { ...result, reactErrors: nextErrors };
     };
 
     const workflow = new StateGraph(AgentState)
@@ -504,12 +515,6 @@ function buildReActGraph(llm, provider, model) {
 
     const compiled = workflow.compile();
     compiled._agentMode = 'react';
-    const originalInvoke = compiled.invoke.bind(compiled);
-    compiled.invoke = async (...args) => {
-        iterationCount = 0;
-        errorTracker = {};
-        return originalInvoke(...args);
-    };
     return compiled;
 }
 
