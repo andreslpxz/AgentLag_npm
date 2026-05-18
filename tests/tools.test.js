@@ -57,6 +57,57 @@ test("search_in_files finds literal matches across a directory", async () => {
   assert.match(String(result), /a\.js:1:function uniqueNeedle/);
 });
 
+test("search_files was removed to avoid duplicate search tools", () => {
+  assert.equal(tools.some(item => item.name === "search_files"), false);
+  assert.ok(toolByName("search_in_files"));
+});
+
+test("apply_patch applies a unified diff via git apply", async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "agentlag-patch-"));
+  const filePath = path.join(dir, "patch.txt");
+  await fs.writeFile(filePath, "old\n", "utf8");
+  const previousCwd = process.cwd();
+  process.chdir(dir);
+  try {
+    const result = await toolByName("apply_patch").invoke({
+      patch: "diff --git a/patch.txt b/patch.txt\n--- a/patch.txt\n+++ b/patch.txt\n@@ -1 +1 @@\n-old\n+new\n",
+    });
+    assert.match(String(result), /Patch aplicado/);
+    assert.equal(await fs.readFile(filePath, "utf8"), "new\n");
+  } finally {
+    process.chdir(previousCwd);
+  }
+});
+
+test("web_search falls back when Tavily is not configured", async () => {
+  const previousFetch = globalThis.fetch;
+  const previousApiKey = process.env.TAVILY_API_KEY;
+  delete process.env.TAVILY_API_KEY;
+  globalThis.fetch = async (url) => {
+    assert.match(String(url), /api\.duckduckgo\.com/);
+    return {
+      ok: true,
+      async json() {
+        return {
+          AbstractText: "AgentLag fallback result",
+          AbstractURL: "https://example.com/agentlag",
+          RelatedTopics: [],
+        };
+      },
+    };
+  };
+
+  try {
+    const result = await toolByName("web_search").invoke({ query: "agentlag" });
+    assert.match(String(result), /DuckDuckGo/);
+    assert.match(String(result), /AgentLag fallback result/);
+  } finally {
+    globalThis.fetch = previousFetch;
+    if (previousApiKey === undefined) delete process.env.TAVILY_API_KEY;
+    else process.env.TAVILY_API_KEY = previousApiKey;
+  }
+});
+
 test("show_diff reports tracked file changes", async () => {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "agentlag-diff-"));
   await fs.writeFile(path.join(dir, "file.txt"), "before\n", "utf8");
