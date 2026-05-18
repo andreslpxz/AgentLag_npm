@@ -1,11 +1,12 @@
 {
   "name": "agentlag",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "type": "module",
   "bin": {
     "agentlag": "./cli.jsx"
   },
   "scripts": {
+    "devintest": "npx tsx cli.jsx",
     "test": "node --test tests/*.test.js"
   },
   "dependencies": {

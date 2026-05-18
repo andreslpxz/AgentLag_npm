@@ -2,8 +2,12 @@ import fs from 'fs';
 import path from 'path';
 import os from 'os';
 
-const MEMORY_FILE = process.env.AGENTLAG_MEMORY_FILE || path.join(os.homedir(), '.agentlag', 'memory.json');
+const DEFAULT_MEMORY_FILE = path.join(os.homedir(), '.agentlag', 'memory.json');
 const MEMORY_VERSION = 2;
+
+export function memoryFilePath(options = {}) {
+    return options.memoryFile || process.env.AGENTLAG_MEMORY_FILE || DEFAULT_MEMORY_FILE;
+}
 
 function nowIso() {
     return new Date().toISOString();
@@ -50,23 +54,25 @@ function isExpired(entry, now = Date.now()) {
     return Boolean(entry?.expiresAt && Date.parse(entry.expiresAt) <= now);
 }
 
-export function loadMemory() {
+export function loadMemory(options = {}) {
+    const filePath = memoryFilePath(options);
     try {
-        if (!fs.existsSync(MEMORY_FILE)) return { version: MEMORY_VERSION, entries: {} };
-        return normalizeMemory(JSON.parse(fs.readFileSync(MEMORY_FILE, 'utf8')));
+        if (!fs.existsSync(filePath)) return { version: MEMORY_VERSION, entries: {} };
+        return normalizeMemory(JSON.parse(fs.readFileSync(filePath, 'utf8')));
     } catch {
         return { version: MEMORY_VERSION, entries: {} };
     }
 }
 
-export function saveMemory(memory) {
-    const dir = path.dirname(MEMORY_FILE);
+export function saveMemory(memory, options = {}) {
+    const filePath = memoryFilePath(options);
+    const dir = path.dirname(filePath);
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(MEMORY_FILE, JSON.stringify(normalizeMemory(memory), null, 2));
+    fs.writeFileSync(filePath, JSON.stringify(normalizeMemory(memory), null, 2));
 }
 
 export function addToMemory(key, value, options = {}) {
-    const memory = loadMemory();
+    const memory = loadMemory(options);
     const existing = memory.entries[key];
     const now = nowIso();
     const ttlDays = Number(options.ttlDays);
@@ -80,18 +86,19 @@ export function addToMemory(key, value, options = {}) {
             ? new Date(Date.now() + ttlDays * 24 * 60 * 60 * 1000).toISOString()
             : existing?.expiresAt || null,
     };
-    saveMemory(memory);
+    saveMemory(memory, options);
 }
 
-export function getFromMemory(key) {
-    const memory = loadMemory();
+export function getFromMemory(key, options = {}) {
+    const memory = loadMemory(options);
     const entry = memory.entries[key];
     if (!entry || isExpired(entry)) return undefined;
     return entry.value;
 }
 
-export function listMemory({ includeExpired = false } = {}) {
-    const memory = loadMemory();
+export function listMemory(options = {}) {
+    const { includeExpired = false } = options;
+    const memory = loadMemory(options);
     return Object.entries(memory.entries)
         .filter(([, entry]) => includeExpired || !isExpired(entry))
         .map(([k, entry]) => {

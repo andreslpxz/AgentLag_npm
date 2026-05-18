@@ -66,6 +66,9 @@ agentlag
 
 # O directamente con tsx si no lo instalaste globalmente
 npx tsx cli.jsx
+
+# Modo de prueba interactivo para desarrollo
+npm run devintest
 ```
 
 Al iniciarse por primera vez, el wizard te pedirá que elijas un proveedor y modelo.
@@ -194,6 +197,18 @@ agentlag/
 └── .agents/
     └── skills/       # Skills locales del proyecto
 ```
+
+---
+
+## Desarrollo y verificación
+
+```bash
+npm test
+npm run devintest
+```
+
+- `npm test` ejecuta los tests automatizados con `node --test`.
+- `npm run devintest` abre la CLI interactiva local para probar el agente manualmente.
 
 ---
 

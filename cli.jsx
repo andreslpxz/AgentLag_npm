@@ -9,6 +9,7 @@ import fs from 'fs';
 import path from 'path';
 import os from 'os';
 import { clearSkillsCache, formatSkillsIndex, readSkill } from './skills.js';
+import pkg from './package.json' with { type: 'json' };
 
 // ─── Persistencia ~/.agentlag/ ────────────────────────────────────────────────
 const CONFIG_DIR  = path.join(os.homedir(), '.agentlag');
@@ -245,7 +246,7 @@ function extractFailedGeneration(err) {
 // ─── Constantes ───────────────────────────────────────────────────────────────
 const SPINNERS       = ['✻', '✼', '✽', '✾', '✿'];
 const THINKING_WORDS = ['Thinking','Reasoning','Analyzing','Computing','Marinating','Levitating','Pondering','Brewing'];
-const TOOL_ICONS     = { create_file:'●', read_file:'●', edit_file:'●', list_directory:'●', search_files:'●', search_in_files:'●', show_diff:'●', apply_patch:'●', run_shell:'●', web_search:'●', list_skills:'●', read_skill:'●', find_skills:'●', add_skill:'●' };
+const TOOL_ICONS     = { create_file:'●', read_file:'●', edit_file:'●', list_directory:'●', search_in_files:'●', show_diff:'●', apply_patch:'●', run_shell:'●', web_search:'●', list_skills:'●', read_skill:'●', find_skills:'●', add_skill:'●' };
 const NEEDS_CONFIRM  = new Set(['run_shell', 'create_file', 'edit_file', 'apply_patch', 'add_skill']);
 
 const toolLabel = (n) => n?.replace(/_/g, ' ') ?? 'tool';
@@ -288,7 +289,7 @@ const AgentLogo = () => (
         <Text color="#00FF87"> ▄▀▄ █▀▀ █▀▀ █▄ █ ▀█▀ █   ▄▀▄ █▀▀ </Text>
         <Text color="#00FF87"> █▀█ █ █ █▀▀ █ ▀█  █  █   █▀█ █ █ </Text>
         <Text color="#00FF87"> ▀ ▀ ▀▀▀ ▀▀▀ ▀  ▀  ▀  ▀▀▀ ▀ ▀ ▀▀▀ </Text>
-        <Box><Text color="white" bold>  AGENTLAG</Text><Text color="gray">  v1.0.0</Text></Box>
+        <Box><Text color="white" bold>  AGENTLAG</Text><Text color="gray">  v{AGENTLAG_VERSION}</Text></Box>
     </Box>
 );
 
@@ -377,7 +378,7 @@ const ColorScreen = ({ menuIndex }) => {
     const opts = ['Auto (match terminal)','Dark mode','Light mode','ANSI colors only'];
     return (
         <Box flexDirection="column" paddingX={1} paddingY={1}>
-            <Text color="gray">Welcome to AgentLag v1.0.0</Text>
+            <Text color="gray">Welcome to AgentLag v{AGENTLAG_VERSION}</Text>
             <Text color="gray">{'…'.repeat(69)}</Text><Newline />
             <AgentLogo />
             <Text color="gray">{'─'.repeat(69)}</Text><Newline />
@@ -541,7 +542,7 @@ const ModelScreen = ({ provider, menuIndex, inputText, ollamaModels, ollamaStatu
 
 // ─── Comandos slash ───────────────────────────────────────────────────────────
 const EFFORT_LEVELS = ['low', 'medium', 'high', 'xhigh', 'max'];
-const AGENTLAG_VERSION = '1.0.0';
+const AGENTLAG_VERSION = pkg.version;
 
 const SLASH_COMMANDS = [
     { cmd:'/add-dir',     desc:['Añadir un directorio al workspace de confianza'] },

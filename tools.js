@@ -1,7 +1,7 @@
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
 import fs from "fs/promises";
-import { exec } from "child_process";
+import { exec, spawn } from "child_process";
 import path from "path";
 import { promisify } from "util";
 import { createRequire } from "module";
@@ -62,6 +62,80 @@ function formatDiff(diff) {
   if (!diff.trim()) return "Sin cambios.";
   if (diff.length <= MAX_DIFF_CHARS) return diff;
   return `${diff.slice(0, MAX_DIFF_CHARS)}\n... diff truncado (${diff.length - MAX_DIFF_CHARS} caracteres restantes).`;
+}
+
+function execWithInput(command, args, input, timeoutMs) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, args, { stdio: ["pipe", "pipe", "pipe"] });
+    let stdout = "";
+    let stderr = "";
+    const timeout = setTimeout(() => {
+      child.kill("SIGTERM");
+      const error = new Error(`Command timed out after ${timeoutMs}ms`);
+      error.stdout = stdout;
+      error.stderr = stderr;
+      reject(error);
+    }, timeoutMs);
+
+    child.stdout.on("data", chunk => { stdout += chunk; });
+    child.stderr.on("data", chunk => { stderr += chunk; });
+    child.on("error", error => {
+      clearTimeout(timeout);
+      error.stdout = stdout;
+      error.stderr = stderr;
+      reject(error);
+    });
+    child.on("close", code => {
+      clearTimeout(timeout);
+      if (code === 0) {
+        resolve({ stdout, stderr });
+      } else {
+        const error = new Error(`${command} exited with code ${code}`);
+        error.stdout = stdout;
+        error.stderr = stderr;
+        reject(error);
+      }
+    });
+    child.stdin.end(input);
+  });
+}
+
+async function fallbackWebSearch(query) {
+  if (typeof fetch !== "function") {
+    return "❌ No hay TAVILY_API_KEY y fetch no está disponible para fallback web.";
+  }
+
+  const url = `https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json&no_redirect=1&no_html=1`;
+  const response = await fetch(url, {
+    headers: { "user-agent": "AgentLag/1.0 (+https://github.com/andreslpxz/AgentLag_npm)" },
+  });
+  if (!response.ok) {
+    return `❌ Fallback web_search falló: HTTP ${response.status}`;
+  }
+
+  const data = await response.json();
+  const lines = ["🔎 Resultados de fallback DuckDuckGo (sin Tavily):"];
+  if (data.AbstractText) {
+    lines.push(`💡 ${data.AbstractText}`);
+    if (data.AbstractURL) lines.push(`🔗 ${data.AbstractURL}`);
+  }
+
+  const topics = [];
+  for (const item of data.RelatedTopics || []) {
+    if (item.Text && item.FirstURL) topics.push(item);
+    for (const nested of item.Topics || []) {
+      if (nested.Text && nested.FirstURL) topics.push(nested);
+    }
+  }
+
+  for (const item of topics.slice(0, 5)) {
+    lines.push(`- ${item.Text}`);
+    lines.push(`  ${item.FirstURL}`);
+  }
+
+  return lines.length > 1
+    ? lines.join("\n")
+    : "⚠️ Fallback DuckDuckGo no devolvió resultados útiles para esta consulta.";
 }
 
 // ─────────────────────────────────────────────
@@ -192,26 +266,11 @@ async function searchInFilesImpl({ pattern, dirPath = ".", fileGlob, literal = f
   }
 }
 
-export const searchFiles = tool(
-  searchInFilesImpl,
-  {
-    name: "search_files",
-    description: "Busca un patrón de texto en archivos del proyecto (como grep). Útil para encontrar funciones, variables, imports, o cualquier texto en el código.",
-    schema: z.object({
-      pattern: z.string().describe("Texto o regex a buscar"),
-      dirPath: z.string().optional().default(".").describe("Directorio donde buscar (default: directorio actual)"),
-      fileGlob: z.string().optional().describe("Filtrar por tipo de archivo (ej: '*.js', '*.py', '*.jsx')"),
-      literal: z.boolean().optional().default(false).describe("true para búsqueda literal en vez de regex"),
-      maxResults: z.number().int().positive().max(200).optional().default(50).describe("Máximo de coincidencias a devolver"),
-    }),
-  }
-);
-
 export const searchInFiles = tool(
   searchInFilesImpl,
   {
     name: "search_in_files",
-    description: "Alias profesional de grep/search para buscar texto literal o regex en todo el repo.",
+    description: "Busca texto literal o regex en archivos del proyecto completo. Útil para encontrar funciones, variables, imports o patrones sin leer archivos uno por uno.",
     schema: z.object({
       pattern: z.string().describe("Texto o regex a buscar"),
       dirPath: z.string().optional().default(".").describe("Directorio donde buscar"),
@@ -251,8 +310,7 @@ export const showDiff = tool(
 export const applyPatchTool = tool(
   async ({ patch, timeoutMs = 15000 }) => {
     try {
-      const command = `python3 - <<'PY'\nimport subprocess\npatch = ${JSON.stringify(patch)}\nproc = subprocess.run(['git', 'apply', '--whitespace=fix', '-'], input=patch, text=True, capture_output=True, timeout=${Math.ceil(clampTimeout(timeoutMs) / 1000)})\nprint(proc.stdout, end='')\nprint(proc.stderr, end='')\nraise SystemExit(proc.returncode)\nPY`;
-      const { stdout, stderr } = await execPromise(command, { timeout: clampTimeout(timeoutMs) + 1000 });
+      const { stdout, stderr } = await execWithInput("git", ["apply", "--whitespace=fix", "-"], patch, clampTimeout(timeoutMs));
       return (stdout || stderr || "✅ Patch aplicado.").trim();
     } catch (error) {
       const output = [error.stdout, error.stderr].filter(Boolean).join("\n").trim();
@@ -302,7 +360,7 @@ export const webSearch = tool(
   async ({ query }) => {
     try {
       const apiKey = process.env.TAVILY_API_KEY;
-      if (!apiKey) return "❌ Falta TAVILY_API_KEY en las variables de entorno.";
+      if (!apiKey) return await fallbackWebSearch(query);
 
       const { tavily } = await import("@tavily/core");
       const client = tavily({ apiKey });
@@ -335,12 +393,13 @@ export const webSearch = tool(
         : "⚠️ Tavily no devolvió resultados para esta consulta.";
 
     } catch (error) {
-      return `❌ Error en búsqueda Tavily: ${error.message}`;
+      const fallback = await fallbackWebSearch(query).catch(fallbackError => `❌ Fallback web_search falló: ${fallbackError.message}`);
+      return `⚠️ Tavily falló (${error.message}).\n\n${fallback}`;
     }
   },
   {
     name: "web_search",
-    description: "Busca información actualizada en internet usando Tavily AI Search. Úsalo para noticias, documentación, versiones de librerías, tutoriales, comparativas y cualquier pregunta sobre tecnología o el mundo real. Siempre devuelve fuentes reales con URLs.",
+    description: "Busca información actualizada en internet. Usa Tavily si TAVILY_API_KEY existe y fallback público de DuckDuckGo si no hay key.",
     schema: z.object({
       query: z.string().describe("Consulta de búsqueda. Puede ser una pregunta completa o términos clave en cualquier idioma."),
     }),
@@ -476,4 +535,4 @@ export const manageMemory = tool(
 
 // Actualizar la lista de herramientas exportadas (sobrescribiendo la línea anterior si es necesario)
 // Nota: como ya exporté 'tools' antes, voy a re-declararla al final del archivo.
-export const tools = [createFile, readFile, editFile, listDirectory, searchFiles, searchInFiles, showDiff, applyPatchTool, runShell, webSearch, listSkills, readSkillTool, findSkills, addSkill, manageMemory];
+export const tools = [createFile, readFile, editFile, listDirectory, searchInFiles, showDiff, applyPatchTool, runShell, webSearch, listSkills, readSkillTool, findSkills, addSkill, manageMemory];
