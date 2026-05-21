@@ -239,4 +239,5 @@ Las contribuciones son bienvenidas. Si quieres agregar un nuevo proveedor, añad
 MIT
 
 ---
-## Hecho con 🔥 por DryInk 
+
+Hecho con 🔥 por DryInk 
