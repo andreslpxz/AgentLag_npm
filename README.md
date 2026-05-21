@@ -237,3 +237,6 @@ Las contribuciones son bienvenidas. Si quieres agregar un nuevo proveedor, añad
 ## Licencia
 
 MIT
+
+---
+## Hecho con 🔥 por DryInk 
