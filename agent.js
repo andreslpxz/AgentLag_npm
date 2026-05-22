@@ -7,6 +7,7 @@ import path from "path";
 import fs from "fs";
 import os from "os";
 import { buildSkillContextForMessage, formatSkillsIndex } from "./skills.js";
+import { loadMcpTools } from "./mcp_utils.js";
 import { listMemory } from './memory_utils.js';
 
 
@@ -303,13 +304,13 @@ export function stripMarkdown(text) {
 }
 
 // ─── Parsear tool call desde texto ReAct ──────────────────────────────────────
-function parseToolCall(text) {
+function parseToolCall(text, availableTools) {
     if (!text || typeof text !== "string") return null;
 
     const actionMatch = text.match(/\*{0,2}Action:?\*{0,2}\s*(\S+)/);
     if (actionMatch) {
         const name = actionMatch[1].replace(/\*+/g, "").trim();
-        const validNames = tools.map(t => t.name);
+        const validNames = availableTools.map(t => t.name);
         if (validNames.includes(name)) {
             const inputMatch = text.match(/\*{0,2}Action Input:?\*{0,2}\s*(\{[\s\S]*?\})/);
             if (inputMatch) {
@@ -327,12 +328,12 @@ function parseToolCall(text) {
         if (start !== -1 && end !== -1 && end > start) {
             const jsonStr = text.slice(start, end + 1);
             const parsed = JSON.parse(jsonStr);
-            if (parsed.name && parsed.args && tools.some(t => t.name === parsed.name)) {
+            if (parsed.name && parsed.args && availableTools.some(t => t.name === parsed.name)) {
                 return { name: parsed.name, args: parsed.args, id: `react_${Date.now()}` };
             }
             const toolName = parsed.tool || parsed.action || parsed.call;
             const toolArgs = parsed.parameters || parsed.args || parsed.input || parsed;
-            if (toolName && tools.some(t => t.name === toolName)) {
+            if (toolName && availableTools.some(t => t.name === toolName)) {
                 return { name: toolName, args: typeof toolArgs === "object" ? toolArgs : {}, id: `react_${Date.now()}` };
             }
             if (Object.keys(parsed).length > 0 && !parsed.name) {
@@ -382,14 +383,18 @@ export async function buildAgent(overrides = {}) {
         }
     }
 
+    // Cargar herramientas MCP dinámicamente
+    const mcpTools = await loadMcpTools();
+    const allTools = [...tools, ...mcpTools];
+
     const llm = await createLLM(provider, model, apiKey, baseUrl);
 
     if (forceReAct) {
-        return buildReActGraph(llm, provider, model);
+        return buildReActGraph(llm, provider, model, allTools);
     }
 
     // Intentar flujo normal con tools nativas
-    const llmWithTools = llm.bindTools(tools);
+    const llmWithTools = llm.bindTools(allTools);
     const systemPrompt = buildSystemPrompt(provider, model);
 
     const callModel = async (state) => {
@@ -401,7 +406,7 @@ export async function buildAgent(overrides = {}) {
         return { messages: [response] };
     };
 
-    const toolNode = new ToolNode(tools);
+    const toolNode = new ToolNode(allTools);
 
     const workflow = new StateGraph(AgentState)
         .addNode("agent", callModel)
@@ -415,14 +420,15 @@ export async function buildAgent(overrides = {}) {
     return compiled;
 }
 
+
 // ─── ReAct Graph (para modelos sin soporte de tools) ──────────────────────────
 const MAX_REACT_ITERATIONS = 15;
 
-function buildReActGraph(llm, provider, model) {
+function buildReActGraph(llm, provider, model, allTools) {
     const reactPrompt = buildReActSystemPrompt(provider, model);
 
     const toolMap = {};
-    for (const t of tools) {
+    for (const t of allTools) {
         toolMap[t.name] = t;
     }
 
@@ -462,7 +468,7 @@ function buildReActGraph(llm, provider, model) {
             : [reactPrompt, ...processedMessages];
         const response = await llm.invoke(messages);
 
-        const toolCall = parseToolCall(response.content);
+        const toolCall = parseToolCall(response.content, allTools);
         if (toolCall) {
             const aiMsg = new AIMessage({
                 content: response.content,
@@ -483,7 +489,7 @@ function buildReActGraph(llm, provider, model) {
         };
     };
 
-    const originalToolNode = new ToolNode(tools);
+    const originalToolNode = new ToolNode(allTools);
     const trackedToolNode = async (state) => {
         const result = await originalToolNode.invoke(state);
         const nextErrors = { ...(state.reactErrors || {}) };
@@ -520,7 +526,7 @@ function buildReActGraph(llm, provider, model) {
 
 export function trySalvageToolCall(message) {
     if (!message || typeof message.content !== 'string') return null;
-    const call = parseToolCall(message.content);
+    const call = parseToolCall(message.content, tools);
     if (call) {
         return {
             ...message,

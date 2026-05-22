@@ -8,6 +8,7 @@ import { spawn } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
+import { loadMcpConfig } from "./mcp_utils.js";
 import { clearSkillsCache, formatSkillsIndex, readSkill } from './skills.js';
 import pkg from './package.json' with { type: 'json' };
 
@@ -1013,8 +1014,7 @@ const App = ({ config: initCfg }) => {
                 return true;
             }
             case '/mcp': {
-                let data = {};
-                try { data = JSON.parse(fs.readFileSync(MCP_FILE, 'utf8')); } catch {}
+                const data = loadMcpConfig();
                 const servers = Object.entries(data?.mcpServers || {});
                 if (servers.length === 0) {
                     say(`🔌 No hay servidores MCP configurados.\nCrea ${MCP_FILE} con:\n{\n  "mcpServers": {\n    "playwright": { "command": "npx", "args": ["-y","@playwright/mcp@latest"] }\n  }\n}`);
