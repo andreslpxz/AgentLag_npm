@@ -1,3 +1,6 @@
+import { createWrappedToolNode } from './agent_ext.js';
+import { optimizeToolOutput } from './optimizer.js';
+import { RecordingSession } from './recording_logger.js';
 import { StateGraph, START, Annotation } from "@langchain/langgraph";
 import { ToolNode, toolsCondition } from "@langchain/langgraph/prebuilt";
 import { SystemMessage, HumanMessage, AIMessage, ToolMessage } from "@langchain/core/messages";
@@ -406,7 +409,7 @@ export async function buildAgent(overrides = {}) {
         return { messages: [response] };
     };
 
-    const toolNode = new ToolNode(allTools);
+    const toolNode = createWrappedToolNode(allTools, overrides.session);
 
     const workflow = new StateGraph(AgentState)
         .addNode("agent", callModel)
@@ -489,7 +492,7 @@ function buildReActGraph(llm, provider, model, allTools) {
         };
     };
 
-    const originalToolNode = new ToolNode(allTools);
+    const originalToolNode = createWrappedToolNode(allTools, overrides.session);
     const trackedToolNode = async (state) => {
         const result = await originalToolNode.invoke(state);
         const nextErrors = { ...(state.reactErrors || {}) };

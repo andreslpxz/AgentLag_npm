@@ -1,4 +1,6 @@
 #!/usr/bin/env node
+import { analyzeAndEvolve, applyEvolution } from './evolution_engine.js';
+import { RecordingSession } from './recording_logger.js';
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { render, Text, Box, useInput, Static, Newline, useStdout } from 'ink';
 import { buildAgent, stripMarkdown, trySalvageToolCall } from './agent.js';
@@ -562,7 +564,7 @@ const SLASH_COMMANDS = [
     { cmd:'/doctor',      desc:['Ejecutar diagnóstico de la instalación y proveedores'] },
     { cmd:'/download',    desc:['Descargar un modelo de HuggingFace e importar a Ollama'] },
     { cmd:'/effort',      desc:['Ajustar el nivel de esfuerzo del modelo (low|medium|high|xhigh|max)'] },
-    { cmd:'/exit',        desc:['Guardar la sesión y salir'] },
+    { cmd:'/evolve',    desc:['Aplicar la última evolución de habilidad sugerida'] },\n    { cmd:'/exit',        desc:['Guardar la sesión y salir'] },
     { cmd:'/export',      desc:['Exportar la conversación a un archivo markdown'] },
     { cmd:'/feedback',    desc:['Abrir la página de issues de GitHub para enviar feedback'] },
     { cmd:'/focus',       desc:['Toggle modo focus (oculta tool spam)'] },
@@ -1514,6 +1516,16 @@ const App = ({ config: initCfg }) => {
                 });
                 return;
             }
+            if (trimmed === '/evolve') {
+                if (global.pendingEvolution) {
+                    applyEvolution(global.pendingEvolution);
+                    setStaticHistory(prev => [...prev, { type:'assistant', text: `✅ Habilidad ${global.pendingEvolution.skillName} evolucionada y guardada en el registro SQLite.` }]);
+                    global.pendingEvolution = null;
+                } else {
+                    setStaticHistory(prev => [...prev, { type:'assistant', text: '❌ No hay evoluciones pendientes para aplicar.' }]);
+                }
+                setInput(''); return;
+            }
             if (trimmed.startsWith('/')) {
                 const q = trimmed.slice(1).toLowerCase();
                 const m = SLASH_COMMANDS.filter(c=>c.cmd.includes(q))[cmdIndex];
@@ -1532,11 +1544,13 @@ const App = ({ config: initCfg }) => {
 
     // ── Agente ────────────────────────────────────────────────────────────────
     const handleSend = useCallback(async (msg) => {
+        const session = new RecordingSession(msg);
+
         if (!agent) {
             setStaticHistory(prev => [...prev, { type:'assistant', text:'❌ El agente aún no está inicializado.' }]);
             return;
         }
-        setStaticHistory(prev => [...prev, { type:'user', text:msg }]);
+        setStaticHistory(prev => [...prev, { type:'user', text:msg }]); session.logInteraction('user', msg);
         setThinkWord(randWord()); setThinkStart(Date.now()); setElapsed(0);
         setStatus('thinking'); setActiveTool(null);
 
@@ -1634,7 +1648,20 @@ const App = ({ config: initCfg }) => {
             if (responseText) {
                 const cleaned = stripMarkdown(responseText);
                 setStaticHistory(prev=>[...prev,{type:'assistant',text:cleaned}]);
+                session.logInteraction('assistant', cleaned);
             }
+
+            const recording = await session.save('success');
+            const evolution = await analyzeAndEvolve(recording, agent);
+            if (evolution) {
+                setStaticHistory(prev => [...prev, {
+                    type: 'assistant',
+                    text: `✨ Oportunidad de evolución detectada: ${evolution.skillName}\nMotivo: ${evolution.reason}\n¿Deseas aplicar esta mejora? (Usa /evolve para confirmar)`
+                }]);
+                // Guardar temporalmente en memoria del proceso para el comando /evolve
+                global.pendingEvolution = evolution;
+            }
+
 
         } catch(err) {
             if (isToolUnsupportedError(err)) {
