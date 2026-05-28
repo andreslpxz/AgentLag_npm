@@ -1,3 +1,4 @@
+import { getSkills } from './skill_registry.js';
 import fs from "fs";
 import path from "path";
 import os from "os";
@@ -66,6 +67,21 @@ export function listInstalledSkills({ includeContent = false, cwd = process.cwd(
   }
 
   const found = [];
+    try {
+        const sqliteSkills = getSkills();
+        for (const s of sqliteSkills) {
+            found.push({
+                name: s.name,
+                description: s.description,
+                path: 'sqlite://' + s.name,
+                scope: 'registry',
+                ...(includeContent ? { content: s.content } : {}),
+            });
+        }
+    } catch (e) {
+        // console.error("Error loading SQLite skills:", e);
+    }
+
   const seen = new Set();
 
   for (const root of skillRoots(cwd)) {

@@ -20,13 +20,13 @@ test("listInstalledSkills caches disk reads until cache is cleared", async () =>
   await writeSkill(cwd, "first", "first skill");
 
   const first = listInstalledSkills({ cwd });
-  assert.deepEqual(first.map(skill => skill.name), ["first"]);
+  assert.deepEqual(first.filter(s => s.scope !== 'registry').map(skill => skill.name), ["first"]);
 
   await writeSkill(cwd, "second", "second skill");
   const cached = listInstalledSkills({ cwd });
-  assert.deepEqual(cached.map(skill => skill.name), ["first"]);
+  assert.deepEqual(cached.filter(s => s.scope !== 'registry').map(skill => skill.name), ["first"]);
 
   clearSkillsCache();
   const refreshed = listInstalledSkills({ cwd });
-  assert.deepEqual(refreshed.map(skill => skill.name), ["first", "second"]);
+  assert.deepEqual(refreshed.filter(s => s.scope !== 'registry').map(skill => skill.name), ["first", "second"]);
 });
