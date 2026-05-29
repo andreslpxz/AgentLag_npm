@@ -420,6 +420,7 @@ export async function buildAgent(overrides = {}) {
 
     const compiled = workflow.compile();
     compiled._agentMode = 'tools';
+    compiled.llm = llm;
     return compiled;
 }
 
@@ -524,6 +525,7 @@ function buildReActGraph(llm, provider, model, allTools) {
 
     const compiled = workflow.compile();
     compiled._agentMode = 'react';
+    compiled.llm = llm;
     return compiled;
 }
 

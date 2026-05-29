@@ -1,4 +1,5 @@
 import { getSkills, saveSkill } from './skill_registry.js';
+import { SystemMessage, HumanMessage } from '@langchain/core/messages';
 
 export async function analyzeAndEvolve(recording, agent) {
     const skills = getSkills();
@@ -27,17 +28,18 @@ Responde en formato JSON:
 `;
 
     try {
-        // Usamos el agente mismo para invocar al modelo, ya que tiene configurado el provider y la key
-        const response = await agent.invoke({
-            messages: [
-                ["system", "Eres un experto en ingeniería de prompts y automatización. Responde únicamente con el JSON solicitado."],
-                ["user", prompt]
-            ]
-        });
+        // Usamos el LLM directamente para evitar el flujo de tools/ReAct del agente
+        const llm = agent.llm || agent;
+        const response = await llm.invoke([
+            new SystemMessage("Eres un experto en ingeniería de prompts y automatización. Responde únicamente con el JSON solicitado."),
+            new HumanMessage(prompt)
+        ]);
 
-        const lastMessage = response.messages[response.messages.length - 1];
-        const content = typeof lastMessage.content === 'string' ? lastMessage.content : JSON.stringify(lastMessage.content);
-        const suggestion = JSON.parse(content.match(/\{[\s\S]*\}/)[0]);
+        const content = typeof response.content === 'string' ? response.content : JSON.stringify(response.content);
+        const match = content.match(/\{[\s\S]*\}/);
+        if (!match) return null;
+
+        const suggestion = JSON.parse(match[0]);
 
         if (suggestion.action !== 'NONE') {
             return suggestion;
