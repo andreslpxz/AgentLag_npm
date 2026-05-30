@@ -1555,7 +1555,37 @@ const App = ({ config: initCfg }) => {
         setThinkWord(randWord()); setThinkStart(Date.now()); setElapsed(0);
         setStatus('thinking'); setActiveTool(null);
 
-        msgRef.current = [...msgRef.current, new HumanMessage(msg)];
+        // Detección de imágenes para multimodal
+        const imageRegex = /\b\S+\.(png|jpg|jpeg|webp|gif)\b/gi;
+        const matches = msg.match(imageRegex) || [];
+        const foundImages = [];
+        for (const imgPath of matches) {
+            try {
+                const fullPath = path.resolve(process.cwd(), imgPath);
+                if (fs.existsSync(fullPath)) {
+                    const ext = path.extname(fullPath).toLowerCase().replace(".", "");
+                    const data = fs.readFileSync(fullPath);
+                    const base64 = data.toString("base64");
+                    foundImages.push({
+                        type: "image_url",
+                        image_url: { url: `data:image/${ext === "jpg" ? "jpeg" : ext};base64,${base64}` }
+                    });
+                }
+            } catch (e) {
+                // Ignorar si no es un archivo válido o no se puede leer
+            }
+        }
+
+        if (foundImages.length > 0) {
+            msgRef.current = [...msgRef.current, new HumanMessage({
+                content: [
+                    { type: "text", text: msg },
+                    ...foundImages
+                ]
+            })];
+        } else {
+            msgRef.current = [...msgRef.current, new HumanMessage(msg)];
+        }
 
         abortCtrlRef.current = new AbortController();
 

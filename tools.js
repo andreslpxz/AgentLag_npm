@@ -535,4 +535,41 @@ export const manageMemory = tool(
 
 // Actualizar la lista de herramientas exportadas (sobrescribiendo la línea anterior si es necesario)
 // Nota: como ya exporté 'tools' antes, voy a re-declararla al final del archivo.
-export const tools = [createFile, readFile, editFile, listDirectory, searchInFiles, showDiff, applyPatchTool, runShell, webSearch, listSkills, readSkillTool, findSkills, addSkill, manageMemory];
+// ─────────────────────────────────────────────
+// HERRAMIENTA: VER IMAGEN
+// ─────────────────────────────────────────────
+export const verImage = tool(
+  async ({ imagePath }) => {
+    try {
+      const fullPath = path.resolve(process.cwd(), imagePath);
+      const ext = path.extname(fullPath).toLowerCase().replace(".", "");
+      const supported = ["png", "jpg", "jpeg", "webp", "gif"];
+
+      if (!supported.includes(ext)) {
+        return `❌ Formato no soportado: ${ext}. Usa png, jpg, jpeg, webp o gif.`;
+      }
+
+      const stats = await fs.stat(fullPath);
+      if (stats.size > 5 * 1024 * 1024) {
+        return "❌ La imagen es demasiado grande (máx 5MB).";
+      }
+
+      const data = await fs.readFile(fullPath);
+      const base64 = data.toString("base64");
+      const mimeType = `image/${ext === "jpg" ? "jpeg" : ext}`;
+
+      return `data:${mimeType};base64,${base64}`;
+    } catch (error) {
+      return `❌ Error al leer la imagen: ${error.message}`;
+    }
+  },
+  {
+    name: "ver_image",
+    description: "Lee una imagen local y la devuelve en formato data URI (base64). Útil para que el agente pueda 'ver' archivos del proyecto.",
+    schema: z.object({
+      imagePath: z.string().describe("Ruta relativa al archivo de imagen (png, jpg, webp, gif)"),
+    }),
+  }
+);
+
+export const tools = [createFile, readFile, editFile, listDirectory, searchInFiles, showDiff, applyPatchTool, runShell, webSearch, listSkills, readSkillTool, findSkills, addSkill, manageMemory, verImage];
