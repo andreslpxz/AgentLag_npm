@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { addEvolution, getEvolutions, removeEvolution, getLatestEvolution } from './evolution_store.js';
 import { analyzeAndEvolve, applyEvolution } from './evolution_engine.js';
 import { RecordingSession } from './recording_logger.js';
 import React, { useState, useCallback, useRef, useEffect } from 'react';
@@ -731,6 +732,14 @@ const App = ({ config: initCfg }) => {
             buildAgent().then(setAgent).catch(err => {
                 setStaticHistory(prev => [...prev, {type:'assistant', text:'❌ Error al iniciar agente: '+err.message}]);
             });
+            const pending = getEvolutions();
+            if (pending.length > 0) {
+                setStaticHistory(prev => [...prev, {
+                    type: 'assistant',
+                    text: `💡 ${pending.length} evoluciones pendientes — usa /evolve para revisarlas`,
+                    ephemeral: true
+                }]);
+            }
         }
     }, [screen, agent]);
 
@@ -1517,13 +1526,55 @@ const App = ({ config: initCfg }) => {
                 });
                 return;
             }
-            if (trimmed === '/evolve') {
-                if (global.pendingEvolution) {
-                    applyEvolution(global.pendingEvolution);
-                    setStaticHistory(prev => [...prev, { type:'assistant', text: `✅ Habilidad ${global.pendingEvolution.skillName} evolucionada y guardada en el registro SQLite.` }]);
-                    global.pendingEvolution = null;
+            if (trimmed === '/evolve' || trimmed.startsWith('/evolve ')) {
+                const parts = trimmed.split(' ');
+                const sub = parts[1];
+                const arg = parts[2];
+                const pending = getEvolutions();
+
+                if (!sub) {
+                    // /evolve (apply latest)
+                    const latest = getLatestEvolution();
+                    if (latest) {
+                        applyEvolution(latest);
+                        removeEvolution(latest.id);
+                        setStaticHistory(prev => [...prev, { type:'assistant', text: `✅ Habilidad ${latest.skillName} evolucionada y guardada en el registro SQLite.` }]);
+                    } else {
+                        setStaticHistory(prev => [...prev, { type:'assistant', text: '❌ No hay evoluciones pendientes para aplicar.' }]);
+                    }
+                } else if (sub === 'list') {
+                    if (pending.length === 0) {
+                        setStaticHistory(prev => [...prev, { type:'assistant', text: 'No hay evoluciones pendientes.' }]);
+                    } else {
+                        const lines = ['🧩 Evoluciones pendientes:', ''];
+                        pending.forEach((ev, i) => {
+                            lines.push(`  ${i + 1}. [${ev.skillName}] ${ev.reason.slice(0, 60)}${ev.reason.length > 60 ? '...' : ''}`);
+                            lines.push(`     ID: ${ev.id}`);
+                        });
+                        lines.push('\nUsa /evolve apply <num> o /evolve discard <num>');
+                        setStaticHistory(prev => [...prev, { type:'assistant', text: lines.join('\n') }]);
+                    }
+                } else if (sub === 'apply' && arg) {
+                    const idx = parseInt(arg) - 1;
+                    const target = pending[idx];
+                    if (target) {
+                        applyEvolution(target);
+                        removeEvolution(target.id);
+                        setStaticHistory(prev => [...prev, { type:'assistant', text: `✅ Habilidad ${target.skillName} evolucionada.` }]);
+                    } else {
+                        setStaticHistory(prev => [...prev, { type:'assistant', text: `❌ Índice ${arg} no válido.` }]);
+                    }
+                } else if (sub === 'discard' && arg) {
+                    const idx = parseInt(arg) - 1;
+                    const target = pending[idx];
+                    if (target) {
+                        removeEvolution(target.id);
+                        setStaticHistory(prev => [...prev, { type:'assistant', text: `🗑 Evolución ${target.id} descartada.` }]);
+                    } else {
+                        setStaticHistory(prev => [...prev, { type:'assistant', text: `❌ Índice ${arg} no válido.` }]);
+                    }
                 } else {
-                    setStaticHistory(prev => [...prev, { type:'assistant', text: '❌ No hay evoluciones pendientes para aplicar.' }]);
+                    setStaticHistory(prev => [...prev, { type:'assistant', text: 'Uso: /evolve [list | apply <n> | discard <n>]' }]);
                 }
                 setInput(''); return;
             }
@@ -1685,12 +1736,11 @@ const App = ({ config: initCfg }) => {
             const recording = await session.save('success');
             const evolution = await analyzeAndEvolve(recording, agent);
             if (evolution) {
+                const saved = addEvolution(evolution);
                 setStaticHistory(prev => [...prev, {
                     type: 'assistant',
                     text: `✨ Oportunidad de evolución detectada: ${evolution.skillName}\nMotivo: ${evolution.reason}\n¿Deseas aplicar esta mejora? (Usa /evolve para confirmar)`
                 }]);
-                // Guardar temporalmente en memoria del proceso para el comando /evolve
-                global.pendingEvolution = evolution;
             }
 
 
