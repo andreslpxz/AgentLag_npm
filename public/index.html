@@ -27,9 +27,12 @@
         <div id="conversations-list" class="flex-1 overflow-y-auto space-y-1">
             <!-- List will be populated here -->
         </div>
-        <div class="p-2 border-t border-white/10">
+        <div class="p-2 border-t border-white/10 space-y-1">
             <button onclick="showSchedules()" class="w-full flex items-center gap-3 px-3 py-2 rounded-md hover:bg-white/5 transition">
-                <i class="fas fa-calendar-alt"></i> Schedules
+                <i class="fas fa-calendar-alt"></i> Tareas
+            </button>
+            <button onclick="showLogs()" class="w-full flex items-center gap-3 px-3 py-2 rounded-md hover:bg-white/5 transition">
+                <i class="fas fa-list-ul"></i> Logs
             </button>
         </div>
     </div>
@@ -69,6 +72,19 @@
     </div>
 
     <!-- Modals -->
+    <!-- Logs Modal -->
+    <div id="logs-modal" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+        <div class="bg-[#2f2f2f] rounded-xl w-full max-w-4xl p-6 shadow-xl h-[80vh] flex flex-col">
+            <div class="flex justify-between items-center mb-6">
+                <h2 class="text-xl font-bold">Logs de Ejecución</h2>
+                <button onclick="closeLogs()" class="text-gray-400 hover:text-white"><i class="fas fa-times"></i></button>
+            </div>
+            <div id="logs-list" class="flex-1 overflow-y-auto space-y-4 pr-2">
+                <!-- Logs will appear here -->
+            </div>
+        </div>
+    </div>
+
     <div id="schedules-modal" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center p-4">
         <div class="bg-[#2f2f2f] rounded-xl w-full max-w-2xl p-6 shadow-xl">
             <div class="flex justify-between items-center mb-6">
@@ -209,6 +225,43 @@
         async function deleteSchedule(id) {
             await fetch(`/api/schedules/${id}`, { method: 'DELETE' });
             loadSchedules();
+        }
+
+        // Logs
+        function showLogs() {
+            document.getElementById('logs-modal').classList.remove('hidden');
+            loadLogs();
+        }
+        function closeLogs() {
+            document.getElementById('logs-modal').classList.add('hidden');
+        }
+
+        async function loadLogs() {
+            const res = await fetch('/api/logs/scheduler');
+            const data = await res.json();
+            const list = document.getElementById('logs-list');
+
+            if (data.length === 0) {
+                list.innerHTML = '<p class="text-gray-500 text-center">No hay logs registrados todavía.</p>';
+                return;
+            }
+
+            list.innerHTML = data.reverse().map(log => `
+                <div class="bg-black/30 p-4 rounded-lg border border-white/5">
+                    <div class="flex justify-between items-start mb-2">
+                        <span class="text-xs font-mono text-gray-500">${new Date(log.timestamp).toLocaleString()}</span>
+                        <span class="px-2 py-0.5 rounded text-[10px] font-bold uppercase ${log.source === 'scheduler' ? 'bg-purple-900 text-purple-200' : 'bg-blue-900 text-blue-200'}">
+                            ${log.source}
+                        </span>
+                    </div>
+                    ${log.taskId ? `<div class="text-emerald-400 text-sm font-bold mb-1">Tarea: ${log.taskId}</div>` : ''}
+                    ${log.user ? `<div class="text-blue-400 text-sm font-bold mb-1">Usuario: ${log.user}</div>` : ''}
+                    <div class="text-gray-300 text-sm mb-2 italic">"${log.input || log.prompt}"</div>
+                    <div class="bg-black/20 p-2 rounded text-xs text-gray-400 whitespace-pre-wrap border-l-2 border-emerald-500">
+                        ${log.output || (log.error ? '❌ Error: ' + log.error : 'Sin salida')}
+                    </div>
+                </div>
+            `).join('');
         }
 
         // Init

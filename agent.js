@@ -388,7 +388,14 @@ export async function buildAgent(overrides = {}) {
 
     // Cargar herramientas MCP dinámicamente
     const mcpTools = await loadMcpTools();
-    const allTools = [...tools, ...mcpTools];
+    let allTools = [...tools, ...mcpTools];
+
+    // Aplicar filtro de herramientas si se solicita
+    if (overrides.allowedTools) {
+        allTools = allTools.filter(t => overrides.allowedTools.includes(t.name));
+    } else if (overrides.excludedTools) {
+        allTools = allTools.filter(t => !overrides.excludedTools.includes(t.name));
+    }
 
     const llm = await createLLM(provider, model, apiKey, baseUrl);
 
