@@ -7,6 +7,7 @@ import fs from 'fs';
 import path from 'path';
 import os from 'os';
 import { Scheduler } from './scheduler.js';
+import { getExecutionLogs } from './bot.js';
 
 const app = new Hono();
 const CONFIG_DIR = path.join(os.homedir(), '.agentlag');
@@ -87,6 +88,11 @@ app.post('/api/schedules', async (c) => {
 
 app.get('/api/schedules', (c) => {
     return c.json(scheduler.listTasks());
+});
+
+app.get('/api/logs/scheduler', (c) => {
+    const logs = getExecutionLogs();
+    return c.json(logs);
 });
 
 app.delete('/api/schedules/:id', (c) => {

@@ -48,9 +48,33 @@ export class Scheduler {
         const cronJob = cron.schedule(cronExp, async () => {
             console.log(`[Scheduler] Running task ${id}: ${prompt}`);
             try {
-                await this.agentRunner(prompt);
+                const result = await this.agentRunner(prompt);
+                const lastMsg = result.messages[result.messages.length - 1];
+
+                // Notificar por Telegram si hay un ID de usuario permitido
+                const { bot, allowedUserId, logExecution } = await import('./bot.js');
+                if (bot && allowedUserId) {
+                    await bot.telegram.sendMessage(allowedUserId, `📅 *Tarea Programada Ejecutada* (${id})\n\n${lastMsg.content}`, { parse_mode: 'Markdown' });
+                }
+
+                // Log para la web
+                logExecution({
+                    source: 'scheduler',
+                    taskId: id,
+                    prompt: prompt,
+                    output: lastMsg.content,
+                    success: true
+                });
+
             } catch (error) {
                 console.error(`[Scheduler] Error in task ${id}:`, error);
+                const { logExecution } = await import('./bot.js');
+                logExecution({
+                    source: 'scheduler',
+                    taskId: id,
+                    error: error.message,
+                    success: false
+                });
             }
         });
 

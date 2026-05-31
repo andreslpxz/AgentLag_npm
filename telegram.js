@@ -1,51 +1,75 @@
-import { Telegraf } from 'telegraf';
+import { bot, logExecution } from './bot.js';
 import { buildAgent } from './agent.js';
-import { HumanMessage, AIMessage } from '@langchain/core/messages';
-import dotenv from 'dotenv';
-import path from 'path';
-import { fileURLToPath } from 'url';
+import { HumanMessage, AIMessage, ToolMessage } from '@langchain/core/messages';
 
-const __agentDir = path.dirname(fileURLToPath(import.meta.url));
-dotenv.config({ path: path.join(__agentDir, ".env") });
-
-const botToken = process.env.TELEGRAM_BOT_TOKEN;
-const allowedUserId = process.env.TELEGRAM_ALLOWED_USER_ID;
-
-if (!botToken) {
-    console.error('TELEGRAM_BOT_TOKEN not found in .env');
-    process.exit(1);
-}
-
-const bot = new Telegraf(botToken);
 let agent;
-
-bot.use(async (ctx, next) => {
-    if (allowedUserId && ctx.from.id.toString() !== allowedUserId.toString()) {
-        return ctx.reply('No tienes permiso para usar este bot.');
-    }
-    return next();
-});
-
-bot.start((ctx) => ctx.reply('¡Hola! Soy AgentLag. ¿En qué puedo ayudarte hoy?'));
+const chatHistories = new Map();
+const MAX_HISTORY = 20;
 
 bot.on('text', async (ctx) => {
+    const chatId = ctx.chat.id;
     const text = ctx.message.text;
+
     try {
         if (!agent) {
             ctx.reply('Iniciando agente...');
-            agent = await buildAgent();
+            // Seguridad: En Telegram excluimos run_shell por defecto
+            agent = await buildAgent({ excludedTools: ['run_shell'] });
         }
 
-        // We could manage history per user/chat here
+        // Recuperar o inicializar historial
+        if (!chatHistories.has(chatId)) {
+            chatHistories.set(chatId, []);
+        }
+        const history = chatHistories.get(chatId);
+
+        // Añadir mensaje del usuario
+        history.push(new HumanMessage(text));
+
+        // Mantener límite de 20 mensajes
+        if (history.length > MAX_HISTORY) {
+            history.splice(0, history.length - MAX_HISTORY);
+        }
+
         const result = await agent.invoke({
-            messages: [new HumanMessage(text)]
+            messages: history
         });
 
+        // El resultado contiene el historial completo actualizado (incluyendo tool calls y respuestas)
+        // Pero nosotros queremos persistir solo lo relevante para el contexto del bot
+        const newMessages = result.messages.slice(history.length);
+
+        // Actualizar historial local con la respuesta del asistente y posibles tools
+        history.push(...newMessages);
+
+        // Volver a recortar si es necesario
+        if (history.length > MAX_HISTORY) {
+            history.splice(0, history.length - MAX_HISTORY);
+        }
+
         const lastMsg = result.messages[result.messages.length - 1];
+
+        // Logging detallado
+        logExecution({
+            source: 'telegram',
+            chatId,
+            user: ctx.from.username || ctx.from.id,
+            input: text,
+            output: lastMsg.content,
+            toolCalls: newMessages.filter(m => m.tool_calls?.length > 0).map(m => m.tool_calls)
+        });
+
         await ctx.reply(lastMsg.content);
+
     } catch (error) {
         console.error('Error in Telegram bot:', error);
         ctx.reply('Lo siento, ocurrió un error al procesar tu solicitud.');
+
+        logExecution({
+            source: 'telegram',
+            chatId,
+            error: error.message
+        });
     }
 });
 
