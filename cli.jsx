@@ -5,6 +5,7 @@ import { RecordingSession } from './recording_logger.js';
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { render, Text, Box, useInput, Static, Newline, useStdout } from 'ink';
 import { buildAgent, stripMarkdown, trySalvageToolCall } from './agent.js';
+import { Scheduler } from './scheduler.js';
 import { fetchOllamaModels, isOllamaRunning } from './ollama_utils.js';
 import { HumanMessage, AIMessage } from '@langchain/core/messages';
 import { spawn } from 'child_process';
@@ -586,6 +587,9 @@ const SLASH_COMMANDS = [
     { cmd:'/resume',      desc:['Reanudar una conversación guardada por nombre'] },
     { cmd:'/sessions',    desc:['Listar conversaciones guardadas en el proyecto'] },
     { cmd:'/skills',      desc:['Listar, leer, buscar o instalar skills de skills.sh'] },
+    { cmd:'/schedule',    desc:['Gestionar tareas programadas (list|add|remove)'] },
+    { cmd:'/server',      desc:['Iniciar el servidor web de AgentLag'] },
+    { cmd:'/bot',         desc:['Iniciar el bot de Telegram de AgentLag'] },
     { cmd:'/version',     desc:['Mostrar la versión de AgentLag'] },
 ];
 
@@ -644,6 +648,13 @@ const App = ({ config: initCfg }) => {
     const [input, setInput]               = useState('');
     const [cmdIndex, setCmdIndex]         = useState(0);
     const [status, setStatus]             = useState('idle');
+    const schedulerRef = useRef(null);
+    if (!schedulerRef.current) {
+        schedulerRef.current = new Scheduler(async (p) => {
+            const ag = await buildAgent();
+            return await ag.invoke({ messages: [new HumanMessage(p)] });
+        });
+    }
     const [thinkWord, setThinkWord]       = useState('Thinking');
     const [thinkStart, setThinkStart]     = useState(null);
     const [elapsed, setElapsed]           = useState(0);
@@ -795,6 +806,44 @@ const App = ({ config: initCfg }) => {
                 say(`Comandos disponibles:\n${helpText}`);
                 return true;
             }
+            case '/schedule': {
+                const parts = args ? args.split(' ') : [];
+                const sub = parts[0];
+                if (sub === 'list' || !sub) {
+                    const tasks = schedulerRef.current.listTasks();
+                    if (tasks.length === 0) say('No hay tareas programadas.');
+                    else {
+                        const lines = ['📅 Tareas programadas:', ''];
+                        tasks.forEach(t => lines.push(`  • ${t.id} [${t.cronExp}]: ${t.prompt}`));
+                        say(lines.join("\n")); // '\n'))//
+                    }
+                } else if (sub === 'add') {
+                    // /schedule add "0 9 * * *" "check files"
+                    const match = args.match(/add "([^"]+)" "([^"]+)" "([^"]+)"/);
+                    if (!match) say('Uso: /schedule add "id" "cron" "prompt"');
+                    else {
+                        schedulerRef.current.scheduleTask(match[1], match[2], match[3]);
+                        say(`✅ Tarea ${match[1]} programada.`);
+                    }
+                } else if (sub === 'remove') {
+                    if (!parts[1]) say('Uso: /schedule remove <id>');
+                    else {
+                        const ok = schedulerRef.current.removeTask(parts[1]);
+                        say(ok ? `✅ Tarea ${parts[1]} eliminada.` : `❌ Tarea ${parts[1]} no encontrada.`);
+                    }
+                }
+                return true;
+            }
+            case '/server': {
+                say('🚀 Iniciando servidor en puerto ' + (process.env.PORT || 3000) + '...');
+                spawn('node', ['server.js'], { detached: true, stdio: 'ignore' }).unref();
+                return true;
+            }
+            case '/bot': {
+                say('🤖 Iniciando bot de Telegram...');
+                spawn('node', ['telegram.js'], { detached: true, stdio: 'ignore' }).unref();
+                return true;
+            }
             case '/version': {
                 say(`AgentLag v${AGENTLAG_VERSION}\nNode ${process.version} · ${process.platform}/${process.arch}`);
                 return true;
@@ -938,7 +987,7 @@ const App = ({ config: initCfg }) => {
                 lines.push(`  • ReAct forzado: ${forceReAct ? 'sí' : 'no'}`);
                 lines.push(`  • Tavily key: ${process.env.TAVILY_API_KEY ? 'sí' : 'no'}`);
                 lines.push(`  • Mensajes en sesión: ${msgRef.current.length}`);
-                say(lines.join('\n'));
+                say(lines.join('\n'))//\n'));
                 if (cfgNow.provider === 'ollama' || cfgNow.provider === 'huggingface') {
                     isOllamaRunning().then(running => say(`  • Ollama corriendo: ${running ? 'sí' : 'no (ollama serve)'}`));
                 }
@@ -1021,7 +1070,7 @@ const App = ({ config: initCfg }) => {
                     for (const [event, cmds] of entries) {
                         lines.push(`  • ${event}: ${(Array.isArray(cmds) ? cmds : [cmds]).join(' ; ')}`);
                     }
-                    say(lines.join('\n'));
+                    say(lines.join('\n'))//\n'));
                 }
                 return true;
             }
@@ -1035,7 +1084,7 @@ const App = ({ config: initCfg }) => {
                     for (const [name, def] of servers) {
                         lines.push(`  • ${name}: ${def.command || ''} ${(def.args || []).join(' ')}`);
                     }
-                    say(lines.join('\n'));
+                    say(lines.join('\n'))//\n'));
                 }
                 return true;
             }
@@ -1054,7 +1103,7 @@ const App = ({ config: initCfg }) => {
                             lines.push(`  • ${path.basename(f, '.json')} — (archivo inválido)`);
                         }
                     }
-                    say(lines.join('\n'));
+                    say(lines.join('\n'))//\n'));
                 }
                 return true;
             }
