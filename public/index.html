@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AgentLag Web</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        .chat-container { height: calc(100vh - 160px); }
+        .sidebar { width: 260px; }
+        pre { background: #1e1e1e; color: #d4d4d4; padding: 1rem; border-radius: 0.5rem; overflow-x: auto; }
+        .thinking { animation: pulse 1.5s infinite; }
+        @keyframes pulse {
+            0% { opacity: 0.4; }
+            50% { opacity: 1; }
+            100% { opacity: 0.4; }
+        }
+    </style>
+</head>
+<body class="bg-[#212121] text-gray-200 flex">
+    <!-- Sidebar -->
+    <div class="sidebar bg-[#171717] h-screen flex flex-col p-2 border-r border-white/10">
+        <button onclick="newChat()" class="flex items-center gap-3 px-3 py-3 border border-white/20 rounded-md hover:bg-white/5 transition mb-2">
+            <i class="fas fa-plus"></i> Nueva conversación
+        </button>
+        <div id="conversations-list" class="flex-1 overflow-y-auto space-y-1">
+            <!-- List will be populated here -->
+        </div>
+        <div class="p-2 border-t border-white/10">
+            <button onclick="showSchedules()" class="w-full flex items-center gap-3 px-3 py-2 rounded-md hover:bg-white/5 transition">
+                <i class="fas fa-calendar-alt"></i> Schedules
+            </button>
+        </div>
+    </div>
+
+    <!-- Main Content -->
+    <div class="flex-1 flex flex-col h-screen">
+        <header class="h-14 border-b border-white/10 flex items-center px-4 justify-between">
+            <h1 id="chat-title" class="font-semibold">AgentLag v1.1.0</h1>
+            <div class="text-sm text-gray-400" id="status">Conectado</div>
+        </header>
+
+        <main class="flex-1 chat-container overflow-y-auto p-4 md:p-8">
+            <div id="messages" class="max-w-3xl mx-auto space-y-6">
+                <!-- Messages will appear here -->
+                <div class="flex gap-4">
+                    <div class="w-8 h-8 rounded-full bg-emerald-600 flex items-center justify-center text-xs">AL</div>
+                    <div class="flex-1 space-y-2">
+                        <p>¡Hola! Soy AgentLag. ¿En qué puedo ayudarte hoy?</p>
+                    </div>
+                </div>
+            </div>
+            <div id="thinking" class="hidden max-w-3xl mx-auto mt-6 flex gap-4 thinking">
+                <div class="w-8 h-8 rounded-full bg-emerald-600 flex items-center justify-center text-xs">AL</div>
+                <div class="flex-1 italic text-gray-400">AgentLag está pensando...</div>
+            </div>
+        </main>
+
+        <footer class="p-4 bg-gradient-to-t from-[#212121] to-transparent">
+            <div class="max-w-3xl mx-auto relative">
+                <textarea id="user-input" rows="1" class="w-full bg-[#2f2f2f] text-white rounded-xl p-4 pr-12 focus:outline-none focus:ring-1 focus:ring-white/20 resize-none" placeholder="Escribe un mensaje..."></textarea>
+                <button onclick="sendMessage()" class="absolute right-3 bottom-3 w-8 h-8 bg-white text-black rounded-lg flex items-center justify-center hover:bg-gray-200 transition">
+                    <i class="fas fa-arrow-up"></i>
+                </button>
+            </div>
+            <p class="text-center text-xs text-gray-500 mt-2">AgentLag puede cometer errores. Considera verificar la información importante.</p>
+        </footer>
+    </div>
+
+    <!-- Modals -->
+    <div id="schedules-modal" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center p-4">
+        <div class="bg-[#2f2f2f] rounded-xl w-full max-w-2xl p-6 shadow-xl">
+            <div class="flex justify-between items-center mb-6">
+                <h2 class="text-xl font-bold">Tareas Programadas</h2>
+                <button onclick="closeSchedules()" class="text-gray-400 hover:text-white"><i class="fas fa-times"></i></button>
+            </div>
+            <div class="space-y-4">
+                <div class="grid grid-cols-2 gap-4">
+                    <input id="sched-id" placeholder="Nombre tarea" class="bg-[#171717] p-2 rounded border border-white/10">
+                    <input id="sched-cron" placeholder="Cron (ej: 0 9 * * 1-5)" class="bg-[#171717] p-2 rounded border border-white/10">
+                </div>
+                <textarea id="sched-prompt" placeholder="¿Qué debe hacer el agente?" class="w-full bg-[#171717] p-2 rounded border border-white/10 h-24"></textarea>
+                <button onclick="addSchedule()" class="w-full bg-emerald-600 py-2 rounded font-bold hover:bg-emerald-700">Agregar Tarea</button>
+            </div>
+            <div id="schedules-list" class="mt-8 space-y-2 max-h-60 overflow-y-auto border-t border-white/10 pt-4">
+                <!-- Schedules will appear here -->
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentConversation = null;
+        let chatHistory = [];
+
+        async function loadConversations() {
+            const res = await fetch('/api/conversations');
+            const data = await res.json();
+            const list = document.getElementById('conversations-list');
+            list.innerHTML = data.map(c => `
+                <button onclick="loadConversation('${c.name}')" class="w-full text-left px-3 py-2 rounded-md hover:bg-white/5 transition truncate text-sm">
+                    <i class="far fa-message mr-2"></i> ${c.name}
+                </button>
+            `).join('');
+        }
+
+        async function loadConversation(name) {
+            currentConversation = name;
+            document.getElementById('chat-title').innerText = name;
+            const res = await fetch(`/api/conversations/${name}`);
+            const data = await res.json();
+            chatHistory = data.history.map(m => ({ type: m.type, content: m.content }));
+            renderMessages();
+        }
+
+        function newChat() {
+            currentConversation = 'conversacion' + Date.now();
+            chatHistory = [];
+            document.getElementById('chat-title').innerText = 'Nueva Conversación';
+            renderMessages();
+        }
+
+        function renderMessages() {
+            const container = document.getElementById('messages');
+            container.innerHTML = chatHistory.map(m => `
+                <div class="flex gap-4">
+                    <div class="w-8 h-8 rounded-full ${m.type === 'user' ? 'bg-blue-600' : 'bg-emerald-600'} flex items-center justify-center text-xs">
+                        ${m.type === 'user' ? 'U' : 'AL'}
+                    </div>
+                    <div class="flex-1 space-y-2">
+                        <div class="prose prose-invert">${formatContent(m.content)}</div>
+                    </div>
+                </div>
+            `).join('');
+            container.scrollTop = container.scrollHeight;
+        }
+
+        function formatContent(content) {
+            // Very basic markdown-like formatting for pre tags
+            return content.replace(/```([\s\S]*?)```/g, '<pre><code></code></pre>')
+                          .replace(/\n/g, '<br>');
+        }
+
+        async function sendMessage() {
+            const input = document.getElementById('user-input');
+            const message = input.value.trim();
+            if (!message) return;
+
+            input.value = '';
+            chatHistory.push({ type: 'user', content: message });
+            renderMessages();
+
+            document.getElementById('thinking').classList.remove('hidden');
+
+            const res = await fetch('/api/chat', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    message,
+                    history: chatHistory.slice(0, -1),
+                    conversationName: currentConversation || 'latest'
+                })
+            });
+
+            const data = await res.json();
+            document.getElementById('thinking').classList.add('hidden');
+            chatHistory.push({ type: 'assistant', content: data.content });
+            renderMessages();
+            loadConversations();
+        }
+
+        // Schedules
+        function showSchedules() {
+            document.getElementById('schedules-modal').classList.remove('hidden');
+            loadSchedules();
+        }
+        function closeSchedules() {
+            document.getElementById('schedules-modal').classList.add('hidden');
+        }
+
+        async function loadSchedules() {
+            const res = await fetch('/api/schedules');
+            const data = await res.json();
+            const list = document.getElementById('schedules-list');
+            list.innerHTML = data.map(s => `
+                <div class="bg-black/20 p-3 rounded flex justify-between items-center">
+                    <div>
+                        <div class="font-bold">${s.id} <span class="text-xs text-emerald-400">${s.cronExp}</span></div>
+                        <div class="text-xs text-gray-400">${s.prompt}</div>
+                    </div>
+                    <button onclick="deleteSchedule('${s.id}')" class="text-red-500 hover:text-red-400"><i class="fas fa-trash"></i></button>
+                </div>
+            `).join('');
+        }
+
+        async function addSchedule() {
+            const id = document.getElementById('sched-id').value;
+            const cronExp = document.getElementById('sched-cron').value;
+            const prompt = document.getElementById('sched-prompt').value;
+
+            await fetch('/api/schedules', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id, cronExp, prompt })
+            });
+            loadSchedules();
+        }
+
+        async function deleteSchedule(id) {
+            await fetch(`/api/schedules/${id}`, { method: 'DELETE' });
+            loadSchedules();
+        }
+
+        // Init
+        loadConversations();
+        document.getElementById('user-input').addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                sendMessage();
+            }
+        });
+    </script>
+</body>
+</html>
