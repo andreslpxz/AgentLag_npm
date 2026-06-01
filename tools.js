@@ -572,4 +572,28 @@ export const verImage = tool(
   }
 );
 
-export const tools = [createFile, readFile, editFile, listDirectory, searchInFiles, showDiff, applyPatchTool, runShell, webSearch, listSkills, readSkillTool, findSkills, addSkill, manageMemory, verImage];
+
+// ─────────────────────────────────────────────
+// HERRAMIENTA: CONSULTAR GRAFO (L3/KUZU)
+// ─────────────────────────────────────────────
+export const queryGraph = tool(
+  async ({ cypher }) => {
+    try {
+      const { kuzuClient } = await import('./kuzu_utils.js');
+      const results = await kuzuClient.query(cypher);
+      if (results.length === 0) return "✅ Consulta ejecutada. No se encontraron resultados.";
+      return JSON.stringify(results, null, 2);
+    } catch (error) {
+      return `❌ Error en la consulta Cypher: ${error.message}`;
+    }
+  },
+  {
+    name: "query_graph",
+    description: "Ejecuta una consulta Cypher en el Knowledge Graph L3 (Kuzu). Úsala para recuperar relaciones entre entidades, conceptos o historia del proyecto. Esquema: Entidad(nombre, tipo), RELACIONA(descripcion).",
+    schema: z.object({
+      cypher: z.string().describe("Consulta Cypher a ejecutar. Ejemplo: MATCH (a)-[r]->(b) RETURN a.nombre, r.descripcion, b.nombre"),
+    }),
+  }
+);
+
+export const tools = [createFile, readFile, editFile, listDirectory, searchInFiles, showDiff, applyPatchTool, runShell, webSearch, listSkills, readSkillTool, findSkills, addSkill, manageMemory, verImage, queryGraph];

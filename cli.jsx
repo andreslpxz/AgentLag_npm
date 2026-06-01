@@ -15,6 +15,7 @@ import os from 'os';
 import { loadMcpConfig } from "./mcp_utils.js";
 import { clearSkillsCache, formatSkillsIndex, readSkill } from './skills.js';
 import pkg from './package.json' with { type: 'json' };
+import { consolidateHistory } from './consolidator.js';
 
 // ─── Persistencia ~/.agentlag/ ────────────────────────────────────────────────
 const CONFIG_DIR  = path.join(os.homedir(), '.agentlag');
@@ -1111,6 +1112,24 @@ const App = ({ config: initCfg }) => {
                 const term = process.env.TERM_PROGRAM || process.env.TERM || 'unknown';
                 const inIDE = !!(process.env.VSCODE_INJECTION || process.env.CURSOR_TRACE_ID || process.env.JETBRAINS_IDE);
                 say(`💻 IDE/terminal: ${term}\n  • Detectado dentro de IDE: ${inIDE ? 'sí' : 'no'}\n  • La integración profunda con IDEs aún no está implementada.`);
+                return true;
+            }
+            case '/consolidate': {
+                if (history.length === 0) {
+                    say('⚠️ No hay mensajes en la sesión actual para consolidar.');
+                    return true;
+                }
+                say('🧠 Consolidando historial en Knowledge Graph L3 (Kuzu)...');
+                (async () => {
+                    try {
+                        const agent = await buildAgent();
+                        // El agente compilado tiene la propiedad .llm (como dice la memoria)
+                        const res = await consolidateHistory(history, agent.llm);
+                        say(res);
+                    } catch (e) {
+                        say(`❌ Error en consolidación: ${e.message}`);
+                    }
+                })();
                 return true;
             }
             case '/memory': {
