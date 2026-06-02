@@ -823,8 +823,12 @@ const App = ({ config: initCfg }) => {
                     const match = args.match(/add "([^"]+)" "([^"]+)" "([^"]+)"/);
                     if (!match) say('Uso: /schedule add "id" "cron" "prompt"');
                     else {
-                        schedulerRef.current.scheduleTask(match[1], match[2], match[3]);
-                        say(`✅ Tarea ${match[1]} programada.`);
+                        try {
+                            schedulerRef.current.scheduleTask(match[1], match[2], match[3]);
+                            say(`✅ Tarea ${match[1]} programada.`);
+                        } catch (err) {
+                            say(`❌ Error al programar tarea: ${err.message}`);
+                        }
                     }
                 } else if (sub === 'remove') {
                     if (!parts[1]) say('Uso: /schedule remove <id>');

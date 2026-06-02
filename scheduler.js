@@ -17,7 +17,11 @@ export class Scheduler {
             if (fs.existsSync(SCHEDULES_FILE)) {
                 const data = JSON.parse(fs.readFileSync(SCHEDULES_FILE, 'utf8'));
                 for (const item of data) {
-                    this.scheduleTask(item.id, item.cronExp, item.prompt, false);
+                    try {
+                        this.scheduleTask(item.id, item.cronExp, item.prompt, false);
+                    } catch (err) {
+                        console.error(`[Scheduler] Skipping invalid saved task ${item.id}:`, err.message);
+                    }
                 }
             }
         } catch (error) {
@@ -45,42 +49,47 @@ export class Scheduler {
             this.tasks.get(id).cronJob.stop();
         }
 
-        const cronJob = cron.schedule(cronExp, async () => {
-            console.log(`[Scheduler] Running task ${id}: ${prompt}`);
-            try {
-                const result = await this.agentRunner(prompt);
-                const lastMsg = result.messages[result.messages.length - 1];
+        try {
+            const cronJob = cron.schedule(cronExp, async () => {
+                console.log(`[Scheduler] Running task ${id}: ${prompt}`);
+                try {
+                    const result = await this.agentRunner(prompt);
+                    const lastMsg = result.messages[result.messages.length - 1];
 
-                // Notificar por Telegram si hay un ID de usuario permitido
-                const { bot, allowedUserId, logExecution } = await import('./bot.js');
-                if (bot && allowedUserId) {
-                    await bot.telegram.sendMessage(allowedUserId, `📅 *Tarea Programada Ejecutada* (${id})\n\n${lastMsg.content}`, { parse_mode: 'Markdown' });
+                    // Notificar por Telegram si hay un ID de usuario permitido
+                    const { bot, allowedUserId, logExecution } = await import('./bot.js');
+                    if (bot && allowedUserId) {
+                        await bot.telegram.sendMessage(allowedUserId, `📅 *Tarea Programada Ejecutada* (${id})\n\n${lastMsg.content}`, { parse_mode: 'Markdown' });
+                    }
+
+                    // Log para la web
+                    logExecution({
+                        source: 'scheduler',
+                        taskId: id,
+                        prompt: prompt,
+                        output: lastMsg.content,
+                        success: true
+                    });
+
+                } catch (error) {
+                    console.error(`[Scheduler] Error in task ${id}:`, error);
+                    const { logExecution } = await import('./bot.js');
+                    logExecution({
+                        source: 'scheduler',
+                        taskId: id,
+                        error: error.message,
+                        success: false
+                    });
                 }
+            });
 
-                // Log para la web
-                logExecution({
-                    source: 'scheduler',
-                    taskId: id,
-                    prompt: prompt,
-                    output: lastMsg.content,
-                    success: true
-                });
-
-            } catch (error) {
-                console.error(`[Scheduler] Error in task ${id}:`, error);
-                const { logExecution } = await import('./bot.js');
-                logExecution({
-                    source: 'scheduler',
-                    taskId: id,
-                    error: error.message,
-                    success: false
-                });
-            }
-        });
-
-        this.tasks.set(id, { id, cronExp, prompt, cronJob });
-        if (save) this.saveSchedules();
-        return id;
+            this.tasks.set(id, { id, cronExp, prompt, cronJob });
+            if (save) this.saveSchedules();
+            return id;
+        } catch (error) {
+            console.error(`[Scheduler] Failed to schedule task ${id}:`, error.message);
+            throw error;
+        }
     }
 
     removeTask(id) {
