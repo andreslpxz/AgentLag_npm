@@ -288,7 +288,7 @@ const PROVIDER_MODELS = {
 };
 
 // ─── Componentes base ─────────────────────────────────────────────────────────
-const HR = ({ char='─', width=72 }) => <Text color="gray">{char.repeat(width)}</Text>;
+const HR = ({ char='─' }) => { const { stdout } = useStdout(); const width = (stdout?.columns || 80) - 2; return <Text color="gray">{char.repeat(Math.max(1, width))}</Text>; };
 
 const AgentLogo = () => (
     <Box flexDirection="column">
@@ -596,7 +596,7 @@ const SLASH_COMMANDS = [
 
 const CommandMenu = ({ input, selectedIndex }) => {
     const query    = input.slice(1).toLowerCase();
-    const filtered = SLASH_COMMANDS.filter(c => c.cmd.includes(query));
+    const filtered = SLASH_COMMANDS.filter(c => c.cmd.includes(query)).slice(0, 8);
     return (
         <Box flexDirection="column">
             {filtered.map((item,i) => {
@@ -619,7 +619,7 @@ const ShortcutsHelp = () => (
     </Box>
 );
 
-const HR_FULL = () => <Text color="gray">{'─'.repeat(process.stdout.columns || 80)}</Text>;
+const HR_FULL = () => { const { stdout } = useStdout(); const width = (stdout?.columns || 80) - 2; return <Text color="gray">{'─'.repeat(Math.max(1, width))}</Text>; };
 
 // ─── App principal ────────────────────────────────────────────────────────────
 const App = ({ config: initCfg }) => {
@@ -732,7 +732,7 @@ const App = ({ config: initCfg }) => {
     useEffect(() => {
         if (screen === 'main' && !agent) {
             setStaticHistory(prev => {
-                if (prev.length === 0 || prev[0].type !== 'welcome') {
+                if (!prev.some(i => i.type === 'welcome')) {
                     return [{
                         type: 'welcome',
                         provider: selProvider?.label || cfg.current.provider || 'provider',
