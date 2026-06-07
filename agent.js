@@ -400,7 +400,7 @@ export async function buildAgent(overrides = {}) {
     const llm = await createLLM(provider, model, apiKey, baseUrl);
 
     if (forceReAct) {
-        return buildReActGraph(llm, provider, model, allTools);
+        return buildReActGraph(llm, provider, model, allTools, overrides.session);
     }
 
     // Intentar flujo normal con tools nativas
@@ -435,7 +435,7 @@ export async function buildAgent(overrides = {}) {
 // ─── ReAct Graph (para modelos sin soporte de tools) ──────────────────────────
 const MAX_REACT_ITERATIONS = 15;
 
-function buildReActGraph(llm, provider, model, allTools) {
+function buildReActGraph(llm, provider, model, allTools, session) {
     const reactPrompt = buildReActSystemPrompt(provider, model);
 
     const toolMap = {};
@@ -500,7 +500,7 @@ function buildReActGraph(llm, provider, model, allTools) {
         };
     };
 
-    const originalToolNode = createWrappedToolNode(allTools, overrides.session);
+    const originalToolNode = createWrappedToolNode(allTools, session);
     const trackedToolNode = async (state) => {
         const result = await originalToolNode.invoke(state);
         const nextErrors = { ...(state.reactErrors || {}) };
