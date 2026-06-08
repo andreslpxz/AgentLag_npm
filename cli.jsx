@@ -670,6 +670,7 @@ const App = ({ config: initCfg }) => {
     const currentConversationRef = useRef(null);
     const [agent, setAgent] = useState(null);
 
+    const [agentError, setAgentError] = useState(null);
     // Nuevos estados para atajos
     const [isVerbose, setIsVerbose]       = useState(false);
     const [showTasks, setShowTasks]       = useState(false);
@@ -741,8 +742,12 @@ const App = ({ config: initCfg }) => {
                 }
                 return prev;
             });
-            buildAgent().then(setAgent).catch(err => {
-                setStaticHistory(prev => [...prev, {type:'assistant', text:'❌ Error al iniciar agente: '+err.message}]);
+            buildAgent().then(ag => {
+                setAgent(ag);
+                setAgentError(null);
+            }).catch(err => {
+                setAgentError(err.message);
+                setStaticHistory(prev => [...prev, {type: "assistant", text: "❌ Error al iniciar el agente: " + err.message}]);
             });
             const pending = getEvolutions();
             if (pending.length > 0) {
@@ -1816,13 +1821,12 @@ const App = ({ config: initCfg }) => {
             }
 
 
-        } catch(err) {
+            if (err.message && err.message.includes("Recursion limit")) {
+                setStaticHistory(prev=>[...prev,{type:"assistant", text:"❌ Error: Se ha alcanzado el límite de recursión (30 pasos). La tarea es demasiado compleja o el agente ha entrado en un bucle infinito."}]);
+                setStatus("idle");
+                return;
+            }
             if (isToolUnsupportedError(err)) {
-                // Si Groq devolvió `tool_use_failed`, el contenido que el modelo
-                // intentó emitir suele ir en `failed_generation`. Lo
-                // recuperamos y lo enseñamos como respuesta del asistente
-                // antes de cambiar a ReAct, así el usuario no pierde el
-                // turno.
                 const salvaged = extractFailedGeneration(err);
                 if (salvaged) {
                     setStaticHistory(prev=>[...prev,{
@@ -1842,86 +1846,91 @@ const App = ({ config: initCfg }) => {
                     setAgent(reactAgent);
                     setForceReAct(true);
                     persistFlag('forceReAct', true);
-                    // Si pudimos rescatar la respuesta, ya cumplimos el turno;
-                    // no reintentamos la misma pregunta para no duplicar.
                     if (salvaged) { return; }
-                    // Reintentar con el agente ReAct
                     setStatus('thinking'); setThinkWord(randWord()); setThinkStart(Date.now());
-                    const retryStream = await reactAgent.stream(
-                        { messages: msgRef.current },
-                        { recursionLimit: 30, signal: abortCtrlRef.current.signal }
-                    );
-                    const retryChunks = [];
-                    let retryPendingTC = null;
-                    for await (const chunk of retryStream) {
-                        retryChunks.push(chunk);
-                        if (chunk.agent) {
-                            const last = chunk.agent.messages?.at(-1);
-                            if (last?.tool_calls?.length > 0) {
-                                const tc = last.tool_calls[0];
-                                retryPendingTC = { name:tc.name, args:tc.args };
-                                if (NEEDS_CONFIRM.has(tc.name)) {
-                                    let detail = '';
-                                    try { const a=tc.args; detail=a.path||a.command||a.filename||JSON.stringify(a).slice(0,80); } catch {}
-                                    setStatus('idle');
-                                    const ok = await askConfirm(tc.name, detail);
-                                    if (!ok) {
-                                        setStaticHistory(prev=>[...prev,{type:'assistant',text:'⚠ Acción cancelada.'}]);
-                                        setStatus('idle'); return;
+                    try {
+                        const retryStream = await reactAgent.stream(
+                            { messages: msgRef.current },
+                            { recursionLimit: 30, signal: abortCtrlRef.current.signal }
+                        );
+                        const retryChunks = [];
+                        let retryPendingTC = null;
+                        for await (const chunk of retryStream) {
+                            retryChunks.push(chunk);
+                            if (chunk.agent) {
+                                const last = chunk.agent.messages?.at(-1);
+                                if (last?.tool_calls?.length > 0) {
+                                    const tc = last.tool_calls[0];
+                                    retryPendingTC = { name:tc.name, args:tc.args };
+                                    if (NEEDS_CONFIRM.has(tc.name)) {
+                                        let detail = '';
+                                        try { const a=tc.args; detail=a.path||a.command||a.filename||JSON.stringify(a).slice(0,80); } catch {}
+                                        setStatus('idle');
+                                        const ok = await askConfirm(tc.name, detail);
+                                        if (!ok) {
+                                            setStaticHistory(prev=>[...prev,{type:'assistant',text:'⚠ Acción cancelada.'}]);
+                                            setStatus('idle'); return;
+                                        }
+                                    }
+                                    setStatus('running');
+                                    setActiveTool({ name:tc.name, input:tc.args });
+                                    setThinkWord(randWord()); setThinkStart(Date.now());
+                                } else {
+                                    setStatus('thinking'); setActiveTool(null);
+                                }
+                            }
+                            if (chunk.tools) {
+                                for (const tm of (chunk.tools.messages||[])) {
+                                    if (tm.name && tm.content !== undefined) {
+                                        setStaticHistory(prev=>[...prev,{
+                                            type:'tool', name:tm.name,
+                                            input: retryPendingTC?.name===tm.name ? retryPendingTC.args : null,
+                                            output:tm.content, running:false,
+                                        }]);
+                                        setActiveTool(null);
+                                        setStatus('thinking'); setThinkWord(randWord()); setThinkStart(Date.now());
                                     }
                                 }
-                                setStatus('running');
-                                setActiveTool({ name:tc.name, input:tc.args });
-                                setThinkWord(randWord()); setThinkStart(Date.now());
-                            } else {
-                                setStatus('thinking'); setActiveTool(null);
                             }
                         }
-                        if (chunk.tools) {
-                            for (const tm of (chunk.tools.messages||[])) {
-                                if (tm.name && tm.content !== undefined) {
-                                    setStaticHistory(prev=>[...prev,{
-                                        type:'tool', name:tm.name,
-                                        input: retryPendingTC?.name===tm.name ? retryPendingTC.args : null,
-                                        output:tm.content, running:false,
-                                    }]);
-                                    setActiveTool(null);
-                                    setStatus('thinking'); setThinkWord(randWord()); setThinkStart(Date.now());
+                        let retryText = '';
+                        for (let i=retryChunks.length-1; i>=0; i--) {
+                            const nd = retryChunks[i].agent || retryChunks[i].tools;
+                            if (!nd?.messages) continue;
+                            for (let j=nd.messages.length-1; j>=0; j--) {
+                                const m=nd.messages[j];
+                                if (m instanceof AIMessage && typeof m.content==='string' && m.content.trim()) {
+                                    retryText=m.content.trim(); break;
                                 }
                             }
+                            if (retryText) break;
+                        }
+                        const retryMsgs=[];
+                        for (const c of retryChunks)
+                            for (const nk of ['agent','tools'])
+                                if (c[nk]?.messages) retryMsgs.push(...c[nk].messages);
+                        msgRef.current=[...msgRef.current,...retryMsgs];
+                        if (retryText) {
+                            const cleaned = stripMarkdown(retryText);
+                            setStaticHistory(prev=>[...prev,{type:"assistant",text:cleaned}]);
+                        }
+                    } catch (reactErr) {
+                        if (reactErr.message && reactErr.message.includes("Recursion limit")) {
+                            setStaticHistory(prev=>[...prev,{type:"assistant", text:"❌ Error: Se ha alcanzado el límite de recursión (30 pasos) en modo ReAct."}]);
+                        } else {
+                            setStaticHistory(prev=>[...prev,{type:"assistant", text:`❌ Error (ReAct): ${reactErr.message}`}]);
                         }
                     }
-                    let retryText = '';
-                    for (let i=retryChunks.length-1; i>=0; i--) {
-                        const nd = retryChunks[i].agent || retryChunks[i].tools;
-                        if (!nd?.messages) continue;
-                        for (let j=nd.messages.length-1; j>=0; j--) {
-                            const m=nd.messages[j];
-                            if (m instanceof AIMessage && typeof m.content==='string' && m.content.trim()) {
-                                retryText=m.content.trim(); break;
-                            }
-                        }
-                        if (retryText) break;
-                    }
-                    const retryMsgs=[];
-                    for (const c of retryChunks)
-                        for (const nk of ['agent','tools'])
-                            if (c[nk]?.messages) retryMsgs.push(...c[nk].messages);
-                    msgRef.current=[...msgRef.current,...retryMsgs];
-                    if (retryText) {
-                        const cleaned = stripMarkdown(retryText);
-                        setStaticHistory(prev=>[...prev,{type:'assistant',text:cleaned}]);
-                    }
-                } catch (reactErr) {
-                    setStaticHistory(prev=>[...prev,{type:'assistant',text:`❌ Error (ReAct): ${reactErr.message}`}]);
+                } catch (e) {
+                     setStaticHistory(prev=>[...prev,{type:'assistant',text:`❌ Error crítico al cambiar a ReAct: ${e.message}`}]);
                 }
             } else {
                 setStaticHistory(prev=>[...prev,{type:'assistant',text:`❌ Error: ${err.message || err}`}]);
             }
         } finally {
-            setStatus('idle'); setActiveTool(null); setThinkStart(null); setElapsed(0);
+            setStatus("idle"); setActiveTool(null); setThinkStart(null); setElapsed(0);
         }
-    }, [agent, askConfirm]);
+}, [agent, askConfirm]);
 
     // ── Render ────────────────────────────────────────────────────────────────
     if (screen==='color')    return <ColorScreen    menuIndex={menuIndex} />;

@@ -213,6 +213,7 @@ REGLAS PARA SKILLS:
 🚀 AUTONOMÍA Y FLUJO:
 - Eres un agente AUTÓNOMO. Si una tarea requiere varios pasos (ej: crear un archivo y luego ejecutarlo), ejecuta la secuencia completa sin esperar confirmación entre pasos, a menos que sea una acción destructiva o crítica.
 - Si el usuario es vago (ej: "un script de test"), toma decisiones razonables basadas en el contexto del proyecto y ejecútalo.
+- **EFICIENCIA:** No repitas llamadas a herramientas con los mismos parámetros. Si ya leíste un archivo, no lo vuelvas a leer a menos que sepas que ha cambiado. Memoriza la información relevante.
 
 📋 REGLAS DE COMPORTAMIENTO:
 - Responde SIEMPRE en el idioma que use el usuario.
@@ -450,7 +451,7 @@ function buildReActGraph(llm, provider, model, allTools, session) {
         if (iterationCount > MAX_REACT_ITERATIONS) {
             return {
                 messages: [new AIMessage({
-                    content: "He alcanzado el límite de pasos. Aquí está lo que logré hacer hasta ahora. ¿Necesitas que continúe con algo específico?"
+                    content: "❌ He alcanzado el límite de iteraciones (15) en modo ReAct sin llegar a una respuesta final. Por favor, sé más específico en tu petición o revisa los errores anteriores."
                 })],
                 reactIterations: 0,
                 reactErrors: {},
