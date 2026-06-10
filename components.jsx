@@ -315,11 +315,23 @@ export const ModelScreen = ({ provider, menuIndex, inputText, ollamaModels, olla
 
 export const CommandMenu = ({ input, selectedIndex, slashCommands }) => {
     const query    = input.slice(1).toLowerCase();
-    const filtered = slashCommands.filter(c => c.cmd.includes(query)).slice(0, 8);
+    const filtered = slashCommands.filter(c => c.cmd.includes(query));
+    const LIMIT    = 8;
+
+    let start = 0;
+    if (filtered.length > LIMIT) {
+        if (selectedIndex >= LIMIT) {
+            start = Math.min(selectedIndex - LIMIT + 1, filtered.length - LIMIT);
+        }
+    }
+
+    const visible = filtered.slice(start, start + LIMIT);
+
     return (
         <Box flexDirection="column">
-            {filtered.map((item, i) => {
-                const sel = i === selectedIndex;
+            {visible.map((item, i) => {
+                const actualIndex = start + i;
+                const sel = actualIndex === selectedIndex;
                 const cc  = sel ? 'cyan' : 'white';
                 const dc  = sel ? 'cyan' : 'gray';
                 const pad = ' '.repeat(Math.max(0, 18 - item.cmd.length));

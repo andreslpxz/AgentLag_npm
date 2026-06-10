@@ -384,8 +384,17 @@ const App = ({ config: initCfg }) => {
 
         // ── Autocomplete de slash commands ────────────────────────────────────
         if (input.startsWith('/')) {
-            if (key.upArrow)   { setCmdIndex(i => Math.max(0, i - 1)); return; }
-            if (key.downArrow) { setCmdIndex(i => Math.min(SLASH_COMMANDS.length - 1, i + 1)); return; }
+            const query    = input.slice(1).toLowerCase();
+            const filtered = SLASH_COMMANDS.filter(c => c.cmd.includes(query));
+
+            if (key.upArrow && filtered.length > 0) {
+                setCmdIndex(i => (i - 1 + filtered.length) % filtered.length);
+                return;
+            }
+            if (key.downArrow && filtered.length > 0) {
+                setCmdIndex(i => (i + 1) % filtered.length);
+                return;
+            }
         }
 
         // ── Enter ─────────────────────────────────────────────────────────────
