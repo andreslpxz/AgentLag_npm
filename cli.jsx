@@ -1819,8 +1819,7 @@ const App = ({ config: initCfg }) => {
                     text: `✨ Oportunidad de evolución detectada: ${evolution.skillName}\nMotivo: ${evolution.reason}\n¿Deseas aplicar esta mejora? (Usa /evolve para confirmar)`
                 }]);
             }
-
-
+        } catch (err) {
             if (err.message && err.message.includes("Recursion limit")) {
                 setStaticHistory(prev=>[...prev,{type:"assistant", text:"❌ Error: Se ha alcanzado el límite de recursión (30 pasos). La tarea es demasiado compleja o el agente ha entrado en un bucle infinito."}]);
                 setStatus("idle");
