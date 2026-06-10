@@ -1,11 +1,29 @@
 {
   "version": 1,
   "skills": {
+    "codebase-analysis": {
+      "source": "solatis/claude-config",
+      "sourceType": "github",
+      "skillPath": "skills/codebase-analysis/SKILL.md",
+      "computedHash": "22c3ce1dc97fc7d8eec04d93ae367d8b7b07743902600c215a562b2762ca883a"
+    },
     "find-skills": {
       "source": "vercel-labs/skills",
       "sourceType": "github",
       "skillPath": "skills/find-skills/SKILL.md",
       "computedHash": "9e1c8b3103f92fa8092568a44fe64858de7c5c9dc65ce4bea8f168080e889cfd"
+    },
+    "repository-analyzer": {
+      "source": "jackspace/claudeskillz",
+      "sourceType": "github",
+      "skillPath": "skills/repository-analyzer/SKILL.md",
+      "computedHash": "c7ed94564577f452ba3388ada9c470c777fd5cfcd62145b044135bbe8721073d"
+    },
+    "selection-randomizer": {
+      "source": "qodex-ai/ai-agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/selection-randomizer/SKILL.md",
+      "computedHash": "f840e9a4e67b173638bb30373fdf00b68cb1052d381067029ebfbc59b88af366"
     }
   }
 }
