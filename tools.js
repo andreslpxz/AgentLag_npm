@@ -11,6 +11,7 @@ import { formatSkillsIndex, readSkill } from "./skills.js";
 import { addToMemory, listMemory } from "./memory_utils.js";
 
 // Cargar .env desde el directorio del proyecto
+import { executeSubagents } from "./agent.js";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const { config } = createRequire(import.meta.url)("dotenv");
 config({ path: path.join(__dirname, ".env") });
@@ -596,4 +597,39 @@ export const queryGraph = tool(
   }
 );
 
-export const tools = [createFile, readFile, editFile, listDirectory, searchInFiles, showDiff, applyPatchTool, runShell, webSearch, listSkills, readSkillTool, findSkills, addSkill, manageMemory, verImage, queryGraph];
+
+// ─────────────────────────────────────────────
+// HERRAMIENTA: DELEGAR A SUBAGENTES (PARALELO)
+// ─────────────────────────────────────────────
+export const delegateToSubagents = tool(
+  async ({ delegations }) => {
+    try {
+      const results = await executeSubagents(delegations);
+      const outputLines = ["🤖 Resultados de delegación paralela:"];
+
+      results.forEach(res => {
+        if (res.status === "success") {
+          outputLines.push(`\n--- ✅ Subagente: ${res.name} ---\n${res.output}`);
+        } else {
+          outputLines.push(`\n--- ❌ Subagente: ${res.name} (Error) ---\n${res.message}`);
+        }
+      });
+
+      return outputLines.join("\n");
+    } catch (error) {
+      return `❌ Error en delegación: ${error.message}`;
+    }
+  },
+  {
+    name: "delegate_to_subagents",
+    description: "Delega múltiples tareas a diferentes subagentes para que se ejecuten en PARALELO. Úsala para tareas independientes que pueden resolverse simultáneamente (ej: análisis de varios archivos, chequeo de sintaxis y estilos, etc.).",
+    schema: z.object({
+      delegations: z.array(z.object({
+        name: z.string().describe("Nombre del subagente (ej: syntax-checker)"),
+        task: z.string().describe("Tarea específica para este subagente")
+      })).min(1).describe("Lista de delegaciones a realizar en paralelo")
+    }),
+  }
+);
+
+export const tools = [createFile, readFile, editFile, listDirectory, searchInFiles, showDiff, applyPatchTool, runShell, webSearch, listSkills, readSkillTool, findSkills, addSkill, manageMemory, verImage, queryGraph, delegateToSubagents];

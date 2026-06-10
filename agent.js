@@ -12,6 +12,7 @@ import os from "os";
 import { buildSkillContextForMessage, formatSkillsIndex } from "./skills.js";
 import { loadMcpTools } from "./mcp_utils.js";
 import { listMemory } from './memory_utils.js';
+import { AGENTS_DIR } from "./session.js";
 
 
 // ─── Cargar .env ──────────────────────────────────────────────────────────────
@@ -233,6 +234,57 @@ REGLAS PARA SKILLS:
 }
 
 // ─── ReAct System Prompt (para modelos sin soporte de tools) ──────────────────
+
+/**
+ * Ejecuta subagentes en paralelo.
+ */
+export async function executeSubagents(delegations) {
+    const results = await Promise.allSettled(delegations.map(async (d) => {
+        const agentFile = path.join(AGENTS_DIR, `${d.name}.json`);
+        if (!fs.existsSync(agentFile)) {
+            return { name: d.name, status: "error", message: `Subagente "${d.name}" no encontrado.` };
+        }
+
+        let def;
+        try {
+            def = JSON.parse(fs.readFileSync(agentFile, "utf8"));
+        } catch (e) {
+            return { name: d.name, status: "error", message: `Error al leer subagente "${d.name}": ${e.message}` };
+        }
+
+        const overrides = {
+            provider: def.provider,
+            model: def.model,
+            allowedTools: def.allowedTools,
+            systemPromptOverride: def.systemPrompt
+        };
+
+        try {
+            const subAgent = await buildAgent(overrides);
+            const response = await subAgent.invoke({
+                messages: [new HumanMessage(d.task)]
+            });
+
+            let text = "";
+            const lastMsg = response.messages[response.messages.length - 1];
+            if (lastMsg instanceof AIMessage) {
+                text = lastMsg.content;
+            } else {
+                text = JSON.stringify(lastMsg);
+            }
+
+            return { name: d.name, status: "success", output: text };
+        } catch (e) {
+            return { name: d.name, status: "error", message: `Error ejecutando subagente "${d.name}": ${e.message}` };
+        }
+    }));
+
+    return results.map(r => {
+        if (r.status === "fulfilled") return r.value;
+        return { status: "error", message: r.reason };
+    });
+}
+
 function buildReActSystemPrompt(provider, model) {
     const toolDescriptions = tools.map(t => `  ${t.name}: ${t.description}`).join("\n");
 
@@ -401,12 +453,12 @@ export async function buildAgent(overrides = {}) {
     const llm = await createLLM(provider, model, apiKey, baseUrl);
 
     if (forceReAct) {
-        return buildReActGraph(llm, provider, model, allTools, overrides.session);
+        return buildReActGraph(llm, provider, model, allTools, overrides.session, overrides.systemPromptOverride);
     }
 
     // Intentar flujo normal con tools nativas
     const llmWithTools = llm.bindTools(allTools);
-    const systemPrompt = buildSystemPrompt(provider, model);
+    const systemPrompt = overrides.systemPromptOverride ? new SystemMessage(overrides.systemPromptOverride) : buildSystemPrompt(provider, model);
 
     const callModel = async (state) => {
         const skillContext = buildSkillContextForMessage(latestUserText(state.messages), process.cwd());
@@ -436,8 +488,8 @@ export async function buildAgent(overrides = {}) {
 // ─── ReAct Graph (para modelos sin soporte de tools) ──────────────────────────
 const MAX_REACT_ITERATIONS = 15;
 
-function buildReActGraph(llm, provider, model, allTools, session) {
-    const reactPrompt = buildReActSystemPrompt(provider, model);
+function buildReActGraph(llm, provider, model, allTools, session, systemPromptOverride) {
+    const reactPrompt = systemPromptOverride ? new SystemMessage(systemPromptOverride) : buildReActSystemPrompt(provider, model);
 
     const toolMap = {};
     for (const t of allTools) {
