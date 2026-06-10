@@ -134,15 +134,7 @@ AgentLag can read installed skills from:
 
 ---
 
-## Development and Verification
 
-```bash
-npm test
-npm run devintest
-```
-
-- `npm test` runs automated tests using `node --test`.
-- `npm run devintest` opens the interactive local CLI for manual testing.
 
 ---
 
