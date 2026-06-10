@@ -1,0 +1,22 @@
+{
+  "task": "test task",
+  "startTime": "2026-06-10T03:17:26.754Z",
+  "endTime": "2026-06-10T03:17:26.755Z",
+  "status": "success",
+  "events": [
+    {
+      "timestamp": "2026-06-10T03:17:26.755Z",
+      "role": "user",
+      "content": "hello"
+    },
+    {
+      "timestamp": "2026-06-10T03:17:26.755Z",
+      "type": "tool_call",
+      "name": "test_tool",
+      "args": {
+        "arg": 1
+      },
+      "result": "result"
+    }
+  ]
+}

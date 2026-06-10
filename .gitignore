@@ -1,3 +1,30 @@
-node_modules
-.agentlag
+# Dependencies
+node_modules/
+
+# Environment and Config
+.env
+.agentlag/
 .agentlag_history.json
+config.json
+
+# Build and runtime artifacts
+dist/
+build/
+*.pyc
+__pycache__/
+
+# Logs and Data
+recordings/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Database
+openspace_skills.db
+kuzu_db/
+
+# OS and IDE
+.DS_Store
+.vscode/
+.idea/

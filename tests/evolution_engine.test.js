@@ -5,8 +5,11 @@ import { analyzeAndEvolve } from "../evolution_engine.js";
 // Mock LLM
 const mockLlm = {
     invoke: async (messages) => {
-        const humanMsg = messages.find(m => m._getType?.() === 'human' || m.content);
-        if (humanMsg.content.includes("recording_test")) {
+        const humanMsg = messages.find(m => m.constructor.name === 'HumanMessage' || (m._getType && m._getType() === 'human'));
+        // Fallback for simple mocks
+        const targetMsg = humanMsg || messages[messages.length - 1];
+
+        if (targetMsg.content && targetMsg.content.includes("recording_test")) {
             return { content: JSON.stringify({
                 action: "CAPTURED",
                 skillName: "test-skill",
@@ -24,7 +27,7 @@ const mockAgent = { llm: mockLlm };
 test("analyzeAndEvolve returns suggestion on valid JSON", async () => {
     const recording = { id: "recording_test", steps: [] };
     const result = await analyzeAndEvolve(recording, mockAgent);
-    assert.notStrictEqual(result, null);
+    assert.notStrictEqual(result, null, "Result should not be null");
     assert.strictEqual(result.action, "CAPTURED");
     assert.strictEqual(result.skillName, "test-skill");
 });
@@ -32,5 +35,5 @@ test("analyzeAndEvolve returns suggestion on valid JSON", async () => {
 test("analyzeAndEvolve returns null on invalid JSON", async () => {
     const recording = { id: "invalid", steps: [] };
     const result = await analyzeAndEvolve(recording, mockAgent);
-    assert.strictEqual(result, null);
+    assert.strictEqual(result, null, "Result should be null for invalid recording/JSON");
 });
