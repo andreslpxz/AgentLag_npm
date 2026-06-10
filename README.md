@@ -1,45 +1,45 @@
 # AgentLag
 
-> Agente CLI interactivo para tareas de ingeniería de software. Multi-proveedor, autónomo y extensible mediante skills.
+> Interactive CLI agent for software engineering tasks. Multi-provider, autonomous, and extensible through skills.
 
 ---
 
-## ¿Qué es AgentLag?
+## What is AgentLag?
 
-AgentLag es un agente automo de terminal que actúa como dev de desarrollo. Puede leer y editar archivos, ejecutar comandos de shell, buscar en tu proyecto y recordar tus preferencias entre sesiones. Funciona con los principales proveedores de LLM y se adapta automáticamente a modelos que no soportan tool calling nativo mediante un modo ReAct de respaldo.
+AgentLag is an autonomous terminal agent that acts as your development partner. It can read and edit files, execute shell commands, search through your project, and remember your preferences across sessions. It works with major LLM providers and automatically adapts to models that don't support native tool calling through a backup ReAct mode.
 
 ---
 
-## Instalación
+## Installation
 
 ```bash
-# Clona el repositorio
+# Clone the repository
 git clone https://github.com/andreslpxz/AgentLag_npm.git
 cd AgentLag_npm
 
-# Instala dependencias
+# Install dependencies
 npm install
 
-# Instala globalmente (opcional)
+# Install globally (optional)
 npm link
 ```
 
-### Requisitos
+### Requirements
 
 - Node.js 18+
-- Una API key del proveedor que quieras usar
+- An API key from the provider you wish to use
 
 ---
 
-## Configuración
+## Configuration
 
-Copia el archivo de ejemplo y añade tu API key:
+Copy the example file and add your API key:
 
 ```bash
 cp env.example .env
 ```
 
-**Variables disponibles en `.env`:**
+**Available variables in `.env`:**
 
 ```env
 ANTHROPIC_API_KEY=sk-...
@@ -54,190 +54,108 @@ TOGETHER_API_KEY=...
 OLLAMA_BASE_URL=http://localhost:11434
 ```
 
-La configuración activa (proveedor y modelo elegidos) se persiste en `~/.agentlag/config.json`.
+The active configuration (chosen provider and model) is persisted in `~/.agentlag/config.json`.
 
 ---
 
-## Uso
+## Usage
 
 ```bash
-# Inicia el agente
+# Start the agent
 agentlag
 
-# O directamente con tsx si no lo instalaste globalmente
+# Or directly with tsx if not installed globally
 npx tsx cli.jsx
 
-# Modo de prueba interactivo para desarrollo
+# Interactive test mode for development
 npm run devintest
 ```
 
-Al iniciarse por primera vez, el wizard te pedirá que elijas un proveedor y modelo.
+On first startup, a wizard will ask you to choose a provider and model.
 
 ---
 
-## Proveedores soportados
+## Supported Providers
 
-| Proveedor     | Comando de selección | Variable de entorno     |
-|---------------|----------------------|-------------------------|
-| Groq          | `/provider`          | `GROQ_API_KEY`          |
-| OpenAI        | `/provider`          | `OPENAI_API_KEY`        |
-| Anthropic     | `/provider`          | `ANTHROPIC_API_KEY`     |
-| OpenRouter    | `/provider`          | `OPENROUTER_API_KEY`    |
-| Mistral       | `/provider`          | `MISTRAL_API_KEY`       |
-| DeepSeek      | `/provider`          | `DEEPSEEK_API_KEY`      |
-| NVIDIA NIM    | `/provider`          | `NVIDIA_API_KEY`        |
-| Lightning AI  | `/provider`          | `LIGHTNING_API_KEY`     |
-| Together AI   | `/provider`          | `TOGETHER_API_KEY`      |
-| Ollama        | `/provider`          | `OLLAMA_BASE_URL`       |
+| Provider      | Selection Command | Environment Variable    |
+|---------------|-------------------|-------------------------|
+| Groq          | `/provider`        | `GROQ_API_KEY`          |
+| OpenAI        | `/provider`        | `OPENAI_API_KEY`        |
+| Anthropic     | `/provider`        | `ANTHROPIC_API_KEY`     |
+| OpenRouter    | `/provider`        | `OPENROUTER_API_KEY`    |
+| Mistral       | `/provider`        | `MISTRAL_API_KEY`       |
+| DeepSeek      | `/provider`        | `DEEPSEEK_API_KEY`      |
+| NVIDIA NIM    | `/provider`        | `NVIDIA_API_KEY`        |
+| Lightning AI  | `/provider`        | `LIGHTNING_API_KEY`     |
+| Together AI   | `/provider`        | `TOGETHER_API_KEY`      |
+| Ollama        | `/provider`        | `OLLAMA_BASE_URL`       |
 
 ### Lightning AI
 
-1. Define `LIGHTNING_API_KEY` en `.env` o pégala cuando el wizard la pida.
-2. Selecciona `Lightning AI` en `/provider`.
-3. Elige un modelo: `openai/gpt-5`, `openai/gpt-5-mini`, `openai/o3` o `lightning-ai/DeepSeek-V3.1`.
+1. Define `LIGHTNING_API_KEY` in `.env` or paste it when the wizard asks.
+2. Select `Lightning AI` in `/provider`.
+3. Choose a model: `openai/gpt-4o`, `openai/o3`, or `lightning-ai/DeepSeek-V3`.
 
 ---
 
-## Herramientas disponibles
+## Available Tools
 
-AgentLag dispone de las siguientes herramientas que el modelo puede invocar de forma autónoma:
+AgentLag has the following tools that the model can invoke autonomously:
 
-| Herramienta      | Descripción                                                  |
+| Tool             | Description                                                  |
 |------------------|--------------------------------------------------------------|
-| `create_file`    | Crea o sobreescribe un archivo, incluyendo directorios intermedios |
-| `read_file`      | Lee el contenido de un archivo con números de línea          |
-| `edit_file`      | Edita un archivo mediante búsqueda y reemplazo de texto exacto |
-| `list_directory` | Lista archivos y carpetas de un directorio (con opción recursiva) |
-| `run_shell`      | Ejecuta comandos de shell en el directorio actual            |
-| `read_skill`     | Lee e inyecta el contenido de una skill instalada            |
-| `find_skills`    | Busca skills disponibles en skills.sh para una necesidad concreta |
-| `manage_memory`  | Guarda o lista preferencias y datos del proyecto en memoria persistente |
+| `create_file`    | Creates or overwrites a file, including intermediate directories |
+| `read_file`      | Reads a file's content with line numbers                     |
+| `edit_file`      | Edits a file via exact search and replace                    |
+| `list_directory` | Lists files and folders (with recursive option)              |
+| `run_shell`      | Executes shell commands in the current directory             |
+| `read_skill`     | Reads and injects the content of an installed skill          |
+| `find_skills`    | Searches for available skills in skills.sh                   |
+| `manage_memory`  | Saves or lists project data in persistent memory             |
+| `query_graph`    | Runs Cypher queries against the L3 Knowledge Graph           |
 
 ---
 
-## Sistema de Skills
+## Advanced Features
 
-AgentLag puede leer skills instaladas desde:
+### 🚀 Evolution Engine
+AgentLag analyzes successful task recordings and proposes new skills or improvements to existing ones.
+- `/evolve list`: See pending evolutions.
+- `/evolve apply <index>`: Apply a specific evolution.
+- `/consolidate`: Extract entities and relations from session history into the L3 Graph.
 
-- `.agents/skills/` — skills locales del proyecto
-- `~/.agents/skills/` — skills globales del usuario
+### 🧠 Knowledge Graph L3
+Uses **Kuzu DB** to build a graph of entities and relations from your project, allowing the agent to have deep historical context.
 
-Cada skill es una carpeta con un archivo `SKILL.md` que contiene frontmatter `name` y `description`. El agente las detecta automáticamente y las aplica cuando el contexto lo requiere.
-
-### Comandos de skills
-
-```bash
-/skills list                                    # Lista las skills instaladas
-/skills read <nombre>                           # Lee el contenido de una skill
-/skills find <descripción>                      # Busca skills en skills.sh
-/skills add <url-repo> --skill <nombre>         # Instala una skill desde GitHub
-```
-
-También puedes activarlas por lenguaje natural:
-
-```
-AgentLag, necesito algo para optimizar imágenes en mi proyecto
-```
-
-Si la skill `find-skills` está instalada, AgentLag buscará automáticamente en skills.sh y propondrá opciones antes de instalar.
+### 🛠 Skill System
+AgentLag can read installed skills from:
+- `.agents/skills/` — Local project skills
+- `~/.agents/skills/` — Global user skills
 
 ---
 
-## Memoria persistente
-
-AgentLag recuerda preferencias entre sesiones. Los datos se almacenan en `~/.agentlag/memory.json`.
-
-Puedes pedirle al agente que guarde información explícitamente:
-
-```
-Recuerda que este proyecto usa TypeScript estricto y Prettier con tab width 2
-```
-
-O listar lo que recuerda:
-
-```
-/memory list
-```
-
----
-
-## Comandos especiales del CLI
-
-| Comando       | Acción                                      |
-|---------------|---------------------------------------------|
-| `/provider`   | Abre el wizard para cambiar proveedor/modelo |
-| `/skills`     | Gestión de skills                           |
-| `/memory`     | Gestión de memoria                          |
-| `exit` / `q`  | Sale del agente                             |
-
----
-
-## Modos de ejecución
-
-### Modo Tools (predeterminado)
-El agente usa las herramientas nativas del modelo (function calling). Disponible en la mayoría de modelos modernos de OpenAI, Anthropic, Groq y otros.
-
-### Modo ReAct (respaldo automático)
-Para modelos sin soporte de tool calling, el agente genera texto estructurado en formato `Thought / Action / Action Input` y lo parsea internamente. Se activa automáticamente o forzando `forceReAct: true` en la configuración.
-
----
-
-## Estructura del proyecto
-
-```
-agentlag/
-├── agent.js          # Lógica central del agente y grafo LangGraph
-├── cli.jsx           # Interfaz de terminal (Ink + React)
-├── tools.js          # Definición de herramientas disponibles
-├── skills.js         # Sistema de descubrimiento y carga de skills
-├── memory_utils.js   # Utilidades de memoria persistente
-├── ollama_utils.js   # Utilidades para modelos Ollama
-├── package.json
-├── env.example       # Plantilla de variables de entorno
-└── .agents/
-    └── skills/       # Skills locales del proyecto
-```
-
----
-
-## Desarrollo y verificación
+## Development and Verification
 
 ```bash
 npm test
 npm run devintest
 ```
 
-- `npm test` ejecuta los tests automatizados con `node --test`.
-- `npm run devintest` abre la CLI interactiva local para probar el agente manualmente.
+- `npm test` runs automated tests using `node --test`.
+- `npm run devintest` opens the interactive local CLI for manual testing.
 
 ---
 
-## Ejemplos de uso
+## Contributing
 
-```
-> Crea un endpoint Express que valide un JWT y devuelva el usuario
-
-> Refactoriza la función parseConfig en src/config.ts para que sea async
-
-> ¿Qué archivos del proyecto importan desde utils/db?
-
-> Ejecuta los tests y dime si alguno falla
-
-> Recuerda que usamos pnpm, no npm
-```
+Contributions are welcome. If you want to add a new provider, add a `case` in the `createLLM` function in `agent.js`. For new tools, add them to `tools.js` using the LangChain `tool()` helper with a Zod schema.
 
 ---
 
-## Contribuir
-
-Las contribuciones son bienvenidas. Si quieres agregar un nuevo proveedor, añade un `case` en la función `createLLM` de `agent.js` siguiendo el patrón existente. Para nuevas herramientas, agrégalas en `tools.js` usando el helper `tool()` de LangChain con esquema Zod.
-
----
-
-## Licencia
+## License
 
 MIT
 
 ---
 
-Hecho con 🔥 por DryInk 
+Made with 🔥 by DryInk
