@@ -2,7 +2,7 @@
 // Catálogo de slash commands y lógica de ejecución.
 import fs   from 'fs';
 import path from 'path';
-import { spawn } from 'child_process';
+import { spawn, execSync } from 'child_process';
 
 import {
     CONFIG_DIR, MEMORY_FILE, HOOKS_FILE, MCP_FILE, AGENTS_DIR,
@@ -638,94 +638,96 @@ export function handleSlashCommand(trimmed, ctx) {
             const topic = args.trim();
             say(`🔍 Iniciando Deep Search sobre: "${topic}"\nEsto puede tardar unos segundos...`);
 
-            // Subpreguntas derivadas del tema principal
-            const subQuestions = [
-                `¿Qué es ${topic}? definición y conceptos básicos`,
-                `${topic} últimas novedades y avances recientes`,
-                `${topic} aplicaciones prácticas y casos de uso`,
-                `${topic} ventajas desventajas y limitaciones`,
-                `${topic} herramientas frameworks y recursos recomendados`,
-            ];
-
-            const results = [];
-            let errorCount = 0;
-
-            // Ejecutar búsquedas en serie para no saturar la API
-            for (const question of subQuestions) {
-                try {
-                    say(`  🔎 Buscando: ${question}`);
-                    const result = await webSearch.invoke({ query: question });
-                    results.push({ question, content: result });
-                } catch (e) {
-                    results.push({ question, content: `⚠️ Error al buscar: ${e.message}` });
-                    errorCount++;
-                }
-            }
-
-            // Construir el documento Markdown
-            const timestamp  = new Date().toISOString();
-            const dateStr    = new Date().toLocaleDateString('es-ES', { year: 'numeric', month: 'long', day: 'numeric' });
-            const safeTopic  = normalizeConversationName(topic) || `deepsearch-${Date.now()}`;
-            const outDir     = path.join(process.cwd(), '.agentlag', 'deepsearch');
-            const outFile    = path.join(outDir, `${safeTopic}.md`);
-
-            const sections = results.map(({ question, content }, i) => {
-                const headings = [
-                    '📖 Definición y conceptos',
-                    '🆕 Novedades y avances recientes',
-                    '⚙️ Aplicaciones y casos de uso',
-                    '⚖️ Ventajas, desventajas y limitaciones',
-                    '🛠️ Herramientas, frameworks y recursos',
+            (async () => {
+                // Subpreguntas derivadas del tema principal
+                const subQuestions = [
+                    `¿Qué es ${topic}? definición y conceptos básicos`,
+                    `${topic} últimas novedades y avances recientes`,
+                    `${topic} aplicaciones prácticas y casos de uso`,
+                    `${topic} ventajas desventajas y limitaciones`,
+                    `${topic} herramientas frameworks y recursos recomendados`,
                 ];
-                return [
-                    `## ${headings[i] || `Sección ${i + 1}`}`,
-                    '',
-                    `> **Búsqueda:** _${question}_`,
-                    '',
-                    content,
-                    '',
-                ].join('\n');
-            });
 
-            const doc = [
-                `# 🔍 Deep Search: ${topic}`,
-                '',
-                `> **Generado:** ${dateStr}  `,
-                `> **Timestamp:** \`${timestamp}\`  `,
-                `> **Subtemas investigados:** ${subQuestions.length}  `,
-                errorCount > 0 ? `> ⚠️ **Advertencia:** ${errorCount} búsqueda(s) fallaron.` : '',
-                '',
-                '---',
-                '',
-                '## 📋 Índice',
-                '',
-                '1. [Definición y conceptos](#definición-y-conceptos)',
-                '2. [Novedades y avances recientes](#novedades-y-avances-recientes)',
-                '3. [Aplicaciones y casos de uso](#aplicaciones-y-casos-de-uso)',
-                '4. [Ventajas, desventajas y limitaciones](#ventajas-desventajas-y-limitaciones)',
-                '5. [Herramientas, frameworks y recursos](#herramientas-frameworks-y-recursos)',
-                '',
-                '---',
-                '',
-                ...sections,
-                '---',
-                '',
-                `_Documento generado automáticamente por AgentLag /deepsearch_`,
-            ].filter(line => line !== undefined).join('\n');
+                const results = [];
+                let errorCount = 0;
 
-            try {
-                fs.mkdirSync(outDir, { recursive: true });
-                fs.writeFileSync(outFile, doc, 'utf8');
-                say([
-                    `✅ Deep Search completado sobre: "${topic}"`,
-                    `📄 Documento guardado en: ${outFile}`,
-                    `📊 ${subQuestions.length} subtemas investigados${errorCount > 0 ? `, ${errorCount} con errores` : ''}`,
-                    ``,
-                    `Tip: Abre el archivo con tu editor o usa /export para incluirlo en la conversación.`,
-                ].join('\n'));
-            } catch (e) {
-                say(`❌ Deep Search completado pero falló al guardar: ${e.message}\n\nResultados:\n${doc.slice(0, 500)}...`);
-            }
+                // Ejecutar búsquedas en serie para no saturar la API
+                for (const question of subQuestions) {
+                    try {
+                        say(`  🔎 Buscando: ${question}`);
+                        const result = await webSearch.invoke({ query: question });
+                        results.push({ question, content: result });
+                    } catch (e) {
+                        results.push({ question, content: `⚠️ Error al buscar: ${e.message}` });
+                        errorCount++;
+                    }
+                }
+
+                // Construir el documento Markdown
+                const timestamp  = new Date().toISOString();
+                const dateStr    = new Date().toLocaleDateString('es-ES', { year: 'numeric', month: 'long', day: 'numeric' });
+                const safeTopic  = normalizeConversationName(topic) || `deepsearch-${Date.now()}`;
+                const outDir     = path.join(process.cwd(), '.agentlag', 'deepsearch');
+                const outFile    = path.join(outDir, `${safeTopic}.md`);
+
+                const sections = results.map(({ question, content }, i) => {
+                    const headings = [
+                        '📖 Definición y conceptos',
+                        '🆕 Novedades y avances recientes',
+                        '⚙️ Aplicaciones y casos de uso',
+                        '⚖️ Ventajas, desventajas y limitaciones',
+                        '🛠️ Herramientas, frameworks y recursos',
+                    ];
+                    return [
+                        `## ${headings[i] || `Sección ${i + 1}`}`,
+                        '',
+                        `> **Búsqueda:** _${question}_`,
+                        '',
+                        content,
+                        '',
+                    ].join('\n');
+                });
+
+                const doc = [
+                    `# 🔍 Deep Search: ${topic}`,
+                    '',
+                    `> **Generado:** ${dateStr}  `,
+                    `> **Timestamp:** \`${timestamp}\`  `,
+                    `> **Subtemas investigados:** ${subQuestions.length}  `,
+                    errorCount > 0 ? `> ⚠️ **Advertencia:** ${errorCount} búsqueda(s) fallaron.` : '',
+                    '',
+                    '---',
+                    '',
+                    '## 📋 Índice',
+                    '',
+                    '1. [Definición y conceptos](#definición-y-conceptos)',
+                    '2. [Novedades y avances recientes](#novedades-y-avances-recientes)',
+                    '3. [Aplicaciones y casos de uso](#aplicaciones-y-casos-de-uso)',
+                    '4. [Ventajas, desventajas y limitaciones](#ventajas-desventajas-y-limitaciones)',
+                    '5. [Herramientas, frameworks y recursos](#herramientas-frameworks-y-recursos)',
+                    '',
+                    '---',
+                    '',
+                    ...sections,
+                    '---',
+                    '',
+                    `_Documento generado automáticamente por AgentLag /deepsearch_`,
+                ].filter(line => line !== undefined).join('\n');
+
+                try {
+                    fs.mkdirSync(outDir, { recursive: true });
+                    fs.writeFileSync(outFile, doc, 'utf8');
+                    say([
+                        `✅ Deep Search completado sobre: "${topic}"`,
+                        `📄 Documento guardado en: ${outFile}`,
+                        `📊 ${subQuestions.length} subtemas investigados${errorCount > 0 ? `, ${errorCount} con errores` : ''}`,
+                        ``,
+                        `Tip: Abre el archivo con tu editor o usa /export para incluirlo en la conversación.`,
+                    ].join('\n'));
+                } catch (e) {
+                    say(`❌ Deep Search completado pero falló al guardar: ${e.message}\n\nResultados:\n${doc.slice(0, 500)}...`);
+                }
+            })();
 
             return true;
         }
@@ -942,7 +944,6 @@ export function handleSlashCommand(trimmed, ctx) {
 
             let gitLog;
             try {
-                const { execSync } = await import('child_process');
                 gitLog = execSync(
                     `git log --pretty=format:"%ad|%s|%an" --date=short -n ${limit}`,
                     { cwd: process.cwd(), encoding: 'utf8', timeout: 15000 }
@@ -1023,7 +1024,6 @@ export function handleSlashCommand(trimmed, ctx) {
 
             let grepOutput;
             try {
-                const { execSync } = await import('child_process');
                 grepOutput = execSync(
                     `grep -rIn --include="*.js" --include="*.ts" --include="*.jsx" --include="*.tsx" --include="*.py" --include="*.go" --include="*.rs" --include="*.java" --include="*.php" --include="*.rb" --include="*.css" --include="*.md" --exclude-dir=node_modules --exclude-dir=.git --exclude-dir=dist --exclude-dir=build -E "(TODO|FIXME|HACK|XXX|BUG|NOTE):?" "${scanDir}" 2>/dev/null || true`,
                     { encoding: 'utf8', timeout: 30000 }
@@ -1098,7 +1098,6 @@ export function handleSlashCommand(trimmed, ctx) {
         // ─────────────────────────────────────────────────────────────────────
         case '/audit': {
             say('🔐 Iniciando auditoría de seguridad...');
-            const { execSync } = await import('child_process');
             const outDir3  = path.join(process.cwd(), '.agentlag', 'audits');
             const outFile3 = path.join(outDir3, `audit-${Date.now()}.md`);
             const dateStr3 = new Date().toLocaleDateString('es-ES', { year: 'numeric', month: 'long', day: 'numeric' });
@@ -1332,12 +1331,11 @@ export function handleSlashCommand(trimmed, ctx) {
             const outFile5  = path.join(outDir5, 'ARCHITECTURE.md');
             say(`🗺️ Analizando arquitectura en: ${scanDir2}`);
 
-            const { execSync: execSync2 } = await import('child_process');
 
             // Listar archivos JS/TS principales (excluir node_modules, dist, etc.)
             let fileList = [];
             try {
-                const result = execSync2(
+                const result = execSync(
                     `find "${scanDir2}" -type f \\( -name "*.js" -o -name "*.ts" -o -name "*.jsx" -o -name "*.tsx" -o -name "*.py" \\) -not -path "*/node_modules/*" -not -path "*/.git/*" -not -path "*/dist/*" -not -path "*/build/*" 2>/dev/null | head -60`,
                     { encoding: 'utf8', timeout: 15000 }
                 );
@@ -1512,7 +1510,6 @@ export function handleSlashCommand(trimmed, ctx) {
 
             const [draftType, ...draftRest] = args.trim().split(/\s+/);
             const draftDesc = draftRest.join(' ');
-            const { execSync: execSync3 } = await import('child_process');
 
             let draft = '';
             const type = draftType.toLowerCase();
@@ -1521,8 +1518,8 @@ export function handleSlashCommand(trimmed, ctx) {
             let lastCommits = '';
             let currentBranch = '';
             try {
-                lastCommits    = execSync3('git log --oneline -5 2>/dev/null', { encoding: 'utf8', cwd: process.cwd(), timeout: 5000 }).trim();
-                currentBranch  = execSync3('git branch --show-current 2>/dev/null', { encoding: 'utf8', cwd: process.cwd(), timeout: 5000 }).trim();
+                lastCommits    = execSync('git log --oneline -5 2>/dev/null', { encoding: 'utf8', cwd: process.cwd(), timeout: 5000 }).trim();
+                currentBranch  = execSync('git branch --show-current 2>/dev/null', { encoding: 'utf8', cwd: process.cwd(), timeout: 5000 }).trim();
             } catch {}
 
             if (type === 'pr') {
@@ -1598,7 +1595,7 @@ export function handleSlashCommand(trimmed, ctx) {
             } else if (type === 'commit') {
                 let gitDiff = '';
                 try {
-                    gitDiff = execSync3('git diff --stat HEAD 2>/dev/null', { encoding:'utf8', cwd: process.cwd(), timeout: 5000 }).trim().slice(0, 300);
+                    gitDiff = execSync('git diff --stat HEAD 2>/dev/null', { encoding:'utf8', cwd: process.cwd(), timeout: 5000 }).trim().slice(0, 300);
                 } catch {}
                 draft = [
                     `feat: ${draftDesc || 'descripción del cambio'}`,
@@ -1611,7 +1608,7 @@ export function handleSlashCommand(trimmed, ctx) {
             } else if (type === 'release') {
                 let changelog = '';
                 try {
-                    changelog = execSync3('git log --oneline -10 2>/dev/null', { encoding:'utf8', cwd: process.cwd(), timeout: 5000 }).trim();
+                    changelog = execSync('git log --oneline -10 2>/dev/null', { encoding:'utf8', cwd: process.cwd(), timeout: 5000 }).trim();
                 } catch {}
                 draft = [
                     `## 🚀 Release ${draftDesc || 'v1.0.0'}`,
@@ -1697,8 +1694,7 @@ export function handleSlashCommand(trimmed, ctx) {
             // Git diff si es posible
             let gitDiff2 = '';
             try {
-                const { execSync: execSync4 } = await import('child_process');
-                gitDiff2 = execSync4(`diff -u "${file1Path}" "${file2Path}" 2>/dev/null || true`, { encoding:'utf8', timeout: 10000 }).slice(0, 2000);
+                gitDiff2 = execSync(`diff -u "${file1Path}" "${file2Path}" 2>/dev/null || true`, { encoding:'utf8', timeout: 10000 }).slice(0, 2000);
             } catch {}
 
             const outDir7  = path.join(process.cwd(), '.agentlag', 'compares');
