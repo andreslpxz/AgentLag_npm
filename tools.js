@@ -632,4 +632,47 @@ export const delegateToSubagents = tool(
   }
 );
 
-export const tools = [createFile, readFile, editFile, listDirectory, searchInFiles, showDiff, applyPatchTool, runShell, webSearch, listSkills, readSkillTool, findSkills, addSkill, manageMemory, verImage, queryGraph, delegateToSubagents];
+// ─────────────────────────────────────────────
+// HERRAMIENTA: BÚSQUEDA PROFUNDA (DEEP SEARCH)
+// ─────────────────────────────────────────────
+export const deepSearch = tool(
+  async ({ topic, questions }) => {
+    try {
+      const results = [];
+      const subQuestions = questions || [
+        `¿Qué es ${topic}? definición y conceptos básicos`,
+        `${topic} últimas novedades y avances recientes`,
+        `${topic} aplicaciones prácticas y casos de uso`,
+        `${topic} ventajas desventajas y limitaciones`,
+        `${topic} herramientas frameworks y recursos recomendados`,
+      ];
+
+      for (const question of subQuestions.slice(0, 5)) {
+        try {
+          const content = await webSearch.invoke({ query: question });
+          results.push({ question, content });
+        } catch (e) {
+          results.push({ question, content: `⚠️ Error: ${e.message}` });
+        }
+      }
+
+      return JSON.stringify({
+        topic,
+        results,
+        summary: `Se investigaron ${results.length} subtemas sobre "${topic}".`
+      }, null, 2);
+    } catch (error) {
+      return `❌ Error en deep_search: ${error.message}`;
+    }
+  },
+  {
+    name: "deep_search",
+    description: "Realiza una investigación exhaustiva sobre un tema complejo ejecutando múltiples búsquedas web. Devuelve una recopilación de datos de varios subtemas. Úsala cuando necesites un análisis profundo antes de dar una respuesta final.",
+    schema: z.object({
+      topic: z.string().describe("El tema principal de investigación"),
+      questions: z.array(z.string()).optional().describe("Lista opcional de hasta 5 sub-preguntas específicas. Si no se proveen, se generarán automáticamente.")
+    }),
+  }
+);
+
+export const tools = [createFile, readFile, editFile, listDirectory, searchInFiles, showDiff, applyPatchTool, runShell, webSearch, listSkills, readSkillTool, findSkills, addSkill, manageMemory, verImage, queryGraph, delegateToSubagents, deepSearch];
