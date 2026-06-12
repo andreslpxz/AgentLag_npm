@@ -1,0 +1,205 @@
+<<<<<<< SEARCH
+        case '/deepsearch': {
+            if (!args) {
+                say('Uso: /deepsearch <tema>\nEjemplo: /deepsearch inteligencia artificial\n\nRealiza una investigación profunda y guarda los resultados en un archivo .md');
+                return true;
+            }
+
+            const topic = args.trim();
+            say(`🔍 Iniciando Deep Search sobre: "${topic}"\nEsto puede tardar unos segundos...`);
+
+            // Subpreguntas derivadas del tema principal
+            const subQuestions = [
+                `¿Qué es ${topic}? definición y conceptos básicos`,
+                `${topic} últimas novedades y avances recientes`,
+                `${topic} aplicaciones prácticas y casos de uso`,
+                `${topic} ventajas desventajas y limitaciones`,
+                `${topic} herramientas frameworks y recursos recomendados`,
+            ];
+
+            const results = [];
+            let errorCount = 0;
+
+            // Ejecutar búsquedas en serie para no saturar la API
+            for (const question of subQuestions) {
+                try {
+                    say(`  🔎 Buscando: ${question}`);
+                    const result = await webSearch.invoke({ query: question });
+                    results.push({ question, content: result });
+                } catch (e) {
+                    results.push({ question, content: `⚠️ Error al buscar: ${e.message}` });
+                    errorCount++;
+                }
+            }
+
+            // Construir el documento Markdown
+            const timestamp  = new Date().toISOString();
+            const dateStr    = new Date().toLocaleDateString('es-ES', { year: 'numeric', month: 'long', day: 'numeric' });
+            const safeTopic  = normalizeConversationName(topic) || `deepsearch-${Date.now()}`;
+            const outDir     = path.join(process.cwd(), '.agentlag', 'deepsearch');
+            const outFile    = path.join(outDir, `${safeTopic}.md`);
+
+            const sections = results.map(({ question, content }, i) => {
+                const headings = [
+                    '📖 Definición y conceptos',
+                    '🆕 Novedades y avances recientes',
+                    '⚙️ Aplicaciones y casos de uso',
+                    '⚖️ Ventajas, desventajas y limitaciones',
+                    '🛠️ Herramientas, frameworks y recursos',
+                ];
+                return [
+                    `## ${headings[i] || `Sección ${i + 1}`}`,
+                    '',
+                    `> **Búsqueda:** _${question}_`,
+                    '',
+                    content,
+                    '',
+                ].join('\n');
+            });
+
+            const doc = [
+                `# 🔍 Deep Search: ${topic}`,
+                '',
+                `> **Generado:** ${dateStr}  `,
+                `> **Timestamp:** \`${timestamp}\`  `,
+                `> **Subtemas investigados:** ${subQuestions.length}  `,
+                errorCount > 0 ? `> ⚠️ **Advertencia:** ${errorCount} búsqueda(s) fallaron.` : '',
+                '',
+                '---',
+                '',
+                '## 📋 Índice',
+                '',
+                '1. [Definición y conceptos](#definición-y-conceptos)',
+                '2. [Novedades y avances recientes](#novedades-y-avances-recientes)',
+                '3. [Aplicaciones y casos de uso](#aplicaciones-y-casos-de-uso)',
+                '4. [Ventajas, desventajas y limitaciones](#ventajas-desventajas-y-limitaciones)',
+                '5. [Herramientas, frameworks y recursos](#herramientas-frameworks-y-recursos)',
+                '',
+                '---',
+                '',
+                ...sections,
+                '---',
+                '',
+                `_Documento generado automáticamente por AgentLag /deepsearch_`,
+            ].filter(line => line !== undefined).join('\n');
+
+            try {
+                fs.mkdirSync(outDir, { recursive: true });
+                fs.writeFileSync(outFile, doc, 'utf8');
+                say([
+                    `✅ Deep Search completado sobre: "${topic}"`,
+                    `📄 Documento guardado en: ${outFile}`,
+                    `📊 ${subQuestions.length} subtemas investigados${errorCount > 0 ? `, ${errorCount} con errores` : ''}`,
+                    ``,
+                    `Tip: Abre el archivo con tu editor o usa /export para incluirlo en la conversación.`,
+                ].join('\n'));
+            } catch (e) {
+                say(`❌ Deep Search completado pero falló al guardar: ${e.message}\n\nResultados:\n${doc.slice(0, 500)}...`);
+            }
+
+            return true;
+        }
+=======
+        case '/deepsearch': {
+            if (!args) {
+                say('Uso: /deepsearch <tema>\nEjemplo: /deepsearch inteligencia artificial\n\nRealiza una investigación profunda y guarda los resultados en un archivo .md');
+                return true;
+            }
+
+            const topic = args.trim();
+            say(`🔍 Iniciando Deep Search sobre: "${topic}"\nEsto puede tardar unos segundos...`);
+
+            (async () => {
+                // Subpreguntas derivadas del tema principal
+                const subQuestions = [
+                    `¿Qué es ${topic}? definición y conceptos básicos`,
+                    `${topic} últimas novedades y avances recientes`,
+                    `${topic} aplicaciones prácticas y casos de uso`,
+                    `${topic} ventajas desventajas y limitaciones`,
+                    `${topic} herramientas frameworks y recursos recomendados`,
+                ];
+
+                const results = [];
+                let errorCount = 0;
+
+                // Ejecutar búsquedas en serie para no saturar la API
+                for (const question of subQuestions) {
+                    try {
+                        say(`  🔎 Buscando: ${question}`);
+                        const result = await webSearch.invoke({ query: question });
+                        results.push({ question, content: result });
+                    } catch (e) {
+                        results.push({ question, content: `⚠️ Error al buscar: ${e.message}` });
+                        errorCount++;
+                    }
+                }
+
+                // Construir el documento Markdown
+                const timestamp  = new Date().toISOString();
+                const dateStr    = new Date().toLocaleDateString('es-ES', { year: 'numeric', month: 'long', day: 'numeric' });
+                const safeTopic  = normalizeConversationName(topic) || `deepsearch-${Date.now()}`;
+                const outDir     = path.join(process.cwd(), '.agentlag', 'deepsearch');
+                const outFile    = path.join(outDir, `${safeTopic}.md`);
+
+                const sections = results.map(({ question, content }, i) => {
+                    const headings = [
+                        '📖 Definición y conceptos',
+                        '🆕 Novedades y avances recientes',
+                        '⚙️ Aplicaciones y casos de uso',
+                        '⚖️ Ventajas, desventajas y limitaciones',
+                        '🛠️ Herramientas, frameworks y recursos',
+                    ];
+                    return [
+                        `## ${headings[i] || `Sección ${i + 1}`}`,
+                        '',
+                        `> **Búsqueda:** _${question}_`,
+                        '',
+                        content,
+                        '',
+                    ].join('\n');
+                });
+
+                const doc = [
+                    `# 🔍 Deep Search: ${topic}`,
+                    '',
+                    `> **Generado:** ${dateStr}  `,
+                    `> **Timestamp:** \`${timestamp}\`  `,
+                    `> **Subtemas investigados:** ${subQuestions.length}  `,
+                    errorCount > 0 ? `> ⚠️ **Advertencia:** ${errorCount} búsqueda(s) fallaron.` : '',
+                    '',
+                    '---',
+                    '',
+                    '## 📋 Índice',
+                    '',
+                    '1. [Definición y conceptos](#definición-y-conceptos)',
+                    '2. [Novedades y avances recientes](#novedades-y-avances-recientes)',
+                    '3. [Aplicaciones y casos de uso](#aplicaciones-y-casos-de-uso)',
+                    '4. [Ventajas, desventajas y limitaciones](#ventajas-desventajas-y-limitaciones)',
+                    '5. [Herramientas, frameworks y recursos](#herramientas-frameworks-y-recursos)',
+                    '',
+                    '---',
+                    '',
+                    ...sections,
+                    '---',
+                    '',
+                    `_Documento generado automáticamente por AgentLag /deepsearch_`,
+                ].filter(line => line !== undefined).join('\n');
+
+                try {
+                    fs.mkdirSync(outDir, { recursive: true });
+                    fs.writeFileSync(outFile, doc, 'utf8');
+                    say([
+                        `✅ Deep Search completado sobre: "${topic}"`,
+                        `📄 Documento guardado en: ${outFile}`,
+                        `📊 ${subQuestions.length} subtemas investigados${errorCount > 0 ? `, ${errorCount} con errores` : ''}`,
+                        ``,
+                        `Tip: Abre el archivo con tu editor o usa /export para incluirlo en la conversación.`,
+                    ].join('\n'));
+                } catch (e) {
+                    say(`❌ Deep Search completado pero falló al guardar: ${e.message}\n\nResultados:\n${doc.slice(0, 500)}...`);
+                }
+            })();
+
+            return true;
+        }
+>>>>>>> REPLACE
