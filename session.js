@@ -37,7 +37,7 @@ export function normalizeConversationName(name) {
         .replace(/[\u0300-\u036f]/g, '')
         .replace(/[^a-zA-Z0-9._-]+/g, '-')
         .replace(/^-+|-+$/g, '')
-        .toLowerCase();
+        .toLowerCase() .slice(0, 100);
 }
 
 export function conversationFile(name) {

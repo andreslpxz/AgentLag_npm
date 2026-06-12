@@ -636,31 +636,58 @@ export function handleSlashCommand(trimmed, ctx) {
             }
 
             const topic = args.trim();
-            say(`🔍 Iniciando Deep Search sobre: "${topic}"\nEsto puede tardar unos segundos...`);
+            say(`🔍 Iniciando Deep Search sobre: "${topic.slice(0, 50)}${topic.length > 50 ? '...' : ''}"\nEsto puede tardar unos segundos...`);
 
             (async () => {
-                // Subpreguntas derivadas del tema principal
-                const subQuestions = [
-                    `¿Qué es ${topic}? definición y conceptos básicos`,
-                    `${topic} últimas novedades y avances recientes`,
-                    `${topic} aplicaciones prácticas y casos de uso`,
-                    `${topic} ventajas desventajas y limitaciones`,
-                    `${topic} herramientas frameworks y recursos recomendados`,
-                ];
+                let subQuestions = [];
+                try {
+                    // Generar subpreguntas inteligentes usando el LLM
+                    const prompt = `Eres un experto investigador. Dado el tema "${topic}", genera exactamente 5 sub-preguntas cortas y específicas para realizar una investigación profunda. Devuelve solo las preguntas, una por línea, sin numeración ni texto adicional.`;
+                    const llmResponse = await agent.llm.invoke(prompt);
+                    subQuestions = llmResponse.content.trim().split('\n')
+                        .map(q => q.replace(/^\d+[\.\)]\s*/, '').trim())
+                        .filter(q => q.length > 3)
+                        .slice(0, 5);
+                } catch (e) {
+                    subQuestions = [
+                        `¿Qué es ${topic}? definición y conceptos básicos`,
+                        `${topic} últimas novedades y avances recientes`,
+                        `${topic} aplicaciones prácticas y casos de uso`,
+                        `${topic} ventajas desventajas y limitaciones`,
+                        `${topic} herramientas frameworks y recursos recomendados`,
+                    ];
+                }
 
                 const results = [];
                 let errorCount = 0;
+                let statusIndex = -1;
 
-                // Ejecutar búsquedas en serie para no saturar la API
-                for (const question of subQuestions) {
+                const updateStatus = (text) => {
+                    setStaticHistory(prev => {
+                        const next = [...prev];
+                        if (statusIndex === -1) {
+                            statusIndex = next.length;
+                            next.push({ type: 'assistant', text });
+                        } else {
+                            next[statusIndex] = { type: 'assistant', text };
+                        }
+                        return next;
+                    });
+                };
+
+                updateStatus(`🔍 Investigando: ○ ○ ○ ○ ○`);
+
+                for (let i = 0; i < subQuestions.length; i++) {
+                    const question = subQuestions[i];
                     try {
-                        say(`  🔎 Buscando: ${question}`);
                         const result = await webSearch.invoke({ query: question });
                         results.push({ question, content: result });
                     } catch (e) {
                         results.push({ question, content: `⚠️ Error al buscar: ${e.message}` });
                         errorCount++;
                     }
+                    const dots = '● '.repeat(i + 1) + '○ '.repeat(subQuestions.length - (i + 1));
+                    updateStatus(`🔍 Investigando: ${dots.trim()}`);
                 }
 
                 // Construir el documento Markdown
@@ -671,17 +698,8 @@ export function handleSlashCommand(trimmed, ctx) {
                 const outFile    = path.join(outDir, `${safeTopic}.md`);
 
                 const sections = results.map(({ question, content }, i) => {
-                    const headings = [
-                        '📖 Definición y conceptos',
-                        '🆕 Novedades y avances recientes',
-                        '⚙️ Aplicaciones y casos de uso',
-                        '⚖️ Ventajas, desventajas y limitaciones',
-                        '🛠️ Herramientas, frameworks y recursos',
-                    ];
                     return [
-                        `## ${headings[i] || `Sección ${i + 1}`}`,
-                        '',
-                        `> **Búsqueda:** _${question}_`,
+                        `## Sección ${i + 1}: ${question}`,
                         '',
                         content,
                         '',
@@ -698,16 +716,6 @@ export function handleSlashCommand(trimmed, ctx) {
                     '',
                     '---',
                     '',
-                    '## 📋 Índice',
-                    '',
-                    '1. [Definición y conceptos](#definición-y-conceptos)',
-                    '2. [Novedades y avances recientes](#novedades-y-avances-recientes)',
-                    '3. [Aplicaciones y casos de uso](#aplicaciones-y-casos-de-uso)',
-                    '4. [Ventajas, desventajas y limitaciones](#ventajas-desventajas-y-limitaciones)',
-                    '5. [Herramientas, frameworks y recursos](#herramientas-frameworks-y-recursos)',
-                    '',
-                    '---',
-                    '',
                     ...sections,
                     '---',
                     '',
@@ -717,15 +725,13 @@ export function handleSlashCommand(trimmed, ctx) {
                 try {
                     fs.mkdirSync(outDir, { recursive: true });
                     fs.writeFileSync(outFile, doc, 'utf8');
-                    say([
-                        `✅ Deep Search completado sobre: "${topic}"`,
-                        `📄 Documento guardado en: ${outFile}`,
-                        `📊 ${subQuestions.length} subtemas investigados${errorCount > 0 ? `, ${errorCount} con errores` : ''}`,
-                        ``,
-                        `Tip: Abre el archivo con tu editor o usa /export para incluirlo en la conversación.`,
+                    updateStatus([
+                        `✅ Deep Search completado`,
+                        `📄 Documento: ${outFile}`,
+                        `📊 ${subQuestions.length} subtemas investigados`,
                     ].join('\n'));
                 } catch (e) {
-                    say(`❌ Deep Search completado pero falló al guardar: ${e.message}\n\nResultados:\n${doc.slice(0, 500)}...`);
+                    updateStatus(`❌ Deep Search completado pero falló al guardar: ${e.message}\n\nResultados:\n${doc.slice(0, 500)}...`);
                 }
             })();
 

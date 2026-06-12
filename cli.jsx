@@ -212,7 +212,7 @@ const App = ({ config: initCfg }) => {
         focusMode, setFocusMode,
         forceReAct, setForceReAct,
         advisorEnabled, setAdvisorEnabled,
-        setAgent, schedulerRef,
+        agent, setAgent, schedulerRef,
         selProvider,
     };
 
