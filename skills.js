@@ -191,8 +191,9 @@ export function formatSkillsIndex(cwd = process.cwd()) {
     return "No hay skills instaladas todavía. Puedes buscar en skills.sh con find_skills o instalar con add_skill.";
   }
 
+  // Reducimos el tamaño omitiendo el path en el prompt del sistema
   return skills
-    .map(skill => `- ${skill.name} (${skill.scope}) → ${skill.description || "sin descripción"}\n  ${skill.path}`)
+    .map(skill => `- ${skill.name} (${skill.scope}) → ${skill.description || "sin descripción"}`)
     .join("\n");
 }
 

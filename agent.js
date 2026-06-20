@@ -165,8 +165,9 @@ async function createLLM(provider, model, apiKey, baseUrl) {
 }
 
 // ─── System prompt ────────────────────────────────────────────────────────────
-function toolSummary() {
-    return tools.map(t => `- ${t.name.padEnd(14)} → ${t.description}`).join("\n");
+function toolSummary(allTools) {
+    const list = allTools || tools;
+    return list.map(t => `- ${t.name.padEnd(14)} → ${t.description}`).join("\n");
 }
 
 function messageText(message) {
@@ -188,13 +189,18 @@ function latestUserText(messages) {
     return "";
 }
 
-function buildSystemPrompt(provider, model) {
+function buildSystemPrompt(provider, model, allTools = null) {
+    const isGroq = provider === 'groq';
+    const toolInfo = (isGroq && allTools)
+        ? "Usa las herramientas disponibles según sea necesario para completar la tarea."
+        : toolSummary(allTools);
+
     return new SystemMessage(
         `Eres AgentLag, una herramienta CLI interactiva para tareas de ingeniería de software.
 Modelo activo: ${model} (${provider}). Plataforma: ${process.platform}. Directorio actual: ${process.cwd()}.
 
 🛠️ HERRAMIENTAS DISPONIBLES:
-${toolSummary()}
+${toolInfo}
 
 🧠 MEMORIA Y PREFERENCIAS:
 ${listMemory()}
@@ -285,8 +291,9 @@ export async function executeSubagents(delegations) {
     });
 }
 
-function buildReActSystemPrompt(provider, model) {
-    const toolDescriptions = tools.map(t => `  ${t.name}: ${t.description}`).join("\n");
+function buildReActSystemPrompt(provider, model, allTools = null) {
+    const list = allTools || tools;
+    const toolDescriptions = list.map(t => `  ${t.name}: ${t.description}`).join("\n");
 
     return new SystemMessage(
         `Eres AgentLag, una herramienta CLI interactiva para tareas de ingeniería de software.
@@ -440,8 +447,19 @@ export async function buildAgent(overrides = {}) {
     }
 
     // Cargar herramientas MCP dinámicamente
-    const mcpTools = await loadMcpTools();
+    let mcpTools = [];
+    if (cfg.disableMcp !== true && overrides.disableMcp !== true) {
+        mcpTools = await loadMcpTools();
+    }
+
     let allTools = [...tools, ...mcpTools];
+
+    // Optimización para Groq o modelos con límites bajos:
+    // Si hay demasiadas herramientas, priorizamos las nativas.
+    if (provider === 'groq' && allTools.length > 20 && !overrides.allowedTools) {
+        // Mantenemos todas las nativas y limitamos las MCP
+        allTools = [...tools, ...mcpTools.slice(0, 5)];
+    }
 
     // Aplicar filtro de herramientas si se solicita
     if (overrides.allowedTools) {
@@ -458,7 +476,7 @@ export async function buildAgent(overrides = {}) {
 
     // Intentar flujo normal con tools nativas
     const llmWithTools = llm.bindTools(allTools);
-    const systemPrompt = overrides.systemPromptOverride ? new SystemMessage(overrides.systemPromptOverride) : buildSystemPrompt(provider, model);
+    const systemPrompt = overrides.systemPromptOverride ? new SystemMessage(overrides.systemPromptOverride) : buildSystemPrompt(provider, model, allTools);
 
     const callModel = async (state) => {
         const skillContext = buildSkillContextForMessage(latestUserText(state.messages), process.cwd());
@@ -489,7 +507,7 @@ export async function buildAgent(overrides = {}) {
 const MAX_REACT_ITERATIONS = 15;
 
 function buildReActGraph(llm, provider, model, allTools, session, systemPromptOverride) {
-    const reactPrompt = systemPromptOverride ? new SystemMessage(systemPromptOverride) : buildReActSystemPrompt(provider, model);
+    const reactPrompt = systemPromptOverride ? new SystemMessage(systemPromptOverride) : buildReActSystemPrompt(provider, model, allTools);
 
     const toolMap = {};
     for (const t of allTools) {
