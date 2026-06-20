@@ -152,8 +152,8 @@ const App = ({ config: initCfg }) => {
             buildAgent()
                 .then(ag => { setAgent(ag); setAgentError(null); })
                 .catch(err => {
-                    setAgentError(err.message);
-                    setStaticHistory(prev => [...prev, { type: 'assistant', text: '❌ Error al iniciar el agente: ' + err.message }]);
+                    const msg = err?.message || String(err || 'Unknown error'); setAgentError(msg);
+                    setStaticHistory(prev => [...prev, { type: 'assistant', text: '❌ Error al iniciar el agente: ' + msg }]);
                 });
             const pending = getEvolutions();
             if (pending.length > 0) {
