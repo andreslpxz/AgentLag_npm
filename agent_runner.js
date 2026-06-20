@@ -82,15 +82,26 @@ export async function runAgentTurn(msg, ctx) {
             session.logInteraction('assistant', cleaned);
         }
 
-        const recording  = await session.save('success');
-        const evolution  = await analyzeAndEvolve(recording, agent);
-        if (evolution) {
-            addEvolution(evolution);
-            setStaticHistory(prev => [...prev, {
-                type: 'assistant',
-                text: `✨ Oportunidad de evolución detectada: ${evolution.skillName}\nMotivo: ${evolution.reason}\n¿Deseas aplicar esta mejora? (Usa /evolve para confirmar)`,
-            }]);
-        }
+        // Reset UI status immediately after response
+        setStatus('idle'); setActiveTool(null); setThinkStart(null); setElapsed(0);
+
+        // Run evolution analysis in background
+        (async () => {
+            try {
+                const recording  = await session.save('success');
+                const evolution  = await analyzeAndEvolve(recording, agent);
+                if (evolution) {
+                    addEvolution(evolution);
+                    setStaticHistory(prev => [...prev, {
+                        type: 'assistant',
+                        text: `✨ Oportunidad de evolución detectada: ${evolution.skillName}\nMotivo: ${evolution.reason}\n¿Deseas aplicar esta mejora? (Usa /evolve para confirmar)`,
+                    }]);
+                }
+            } catch (evolveErr) {
+                console.error("Error in background evolution:", evolveErr);
+            }
+        })();
+
     } catch (err) {
         await _handleAgentError(err, agent, msgRef, setStaticHistory, setStatus, setActiveTool,
             setThinkWord, setThinkStart, setTotalTokens, abortCtrlRef, askConfirm,
@@ -192,7 +203,7 @@ async function _handleAgentError(err, agent, msgRef, setStaticHistory, setStatus
     setThinkWord, setThinkStart, setTotalTokens, abortCtrlRef, askConfirm,
     setAgent, setForceReAct, persistFlag)
 {
-    if (err.message?.includes('Recursion limit')) {
+    if (err?.message?.includes('Recursion limit')) {
         setStaticHistory(prev => [...prev, { type: 'assistant', text: '❌ Error: Se ha alcanzado el límite de recursión (30 pasos). La tarea es demasiado compleja o el agente ha entrado en un bucle infinito.' }]);
         setStatus('idle');
         return;
@@ -222,14 +233,14 @@ async function _handleAgentError(err, agent, msgRef, setStaticHistory, setStatus
                 setStaticHistory(prev => [...prev, { type: 'assistant', text: stripMarkdown(retryText) }]);
             }
         } catch (e) {
-            if (e.message?.includes('Recursion limit')) {
+            if (e?.message?.includes('Recursion limit')) {
                 setStaticHistory(prev => [...prev, { type: 'assistant', text: '❌ Error: Se ha alcanzado el límite de recursión (30 pasos) en modo ReAct.' }]);
             } else {
-                setStaticHistory(prev => [...prev, { type: 'assistant', text: `❌ Error crítico al cambiar a ReAct: ${e.message}` }]);
+                setStaticHistory(prev => [...prev, { type: 'assistant', text: `❌ Error crítico al cambiar a ReAct: ${e?.message || e}` }]);
             }
         }
     } else {
-        setStaticHistory(prev => [...prev, { type: 'assistant', text: `❌ Error: ${err.message || err}` }]);
+        setStaticHistory(prev => [...prev, { type: 'assistant', text: `❌ Error: ${err?.message || err}` }]);
     }
 }
 
