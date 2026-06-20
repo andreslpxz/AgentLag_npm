@@ -10,14 +10,14 @@ import {
     loadSession, saveSession, clearLatestSession,
 } from './session.js';
 import { copyToClipboard, splitCommandArgs, runCommand } from './utils.js';
-import { clearSkillsCache, formatSkillsIndex, readSkill } from './skills.js';
+import { clearSkillsCache, formatSkillsIndex, readSkill, listInstalledSkills } from './skills.js';
 import { loadMcpConfig } from './mcp_utils.js';
 import { isOllamaRunning } from './ollama_utils.js';
 import { getEvolutions, getLatestEvolution, removeEvolution } from './evolution_store.js';
 import { applyEvolution } from './evolution_engine.js';
 import { consolidateHistory } from './consolidator.js';
 import { buildAgent } from './agent.js';
-import { webSearch } from './tools.js';
+import { webSearch, tools } from './tools.js';
 import { HumanMessage, AIMessage } from '@langchain/core/messages';
 import pkg from './package.json' with { type: 'json' };
 
@@ -38,6 +38,7 @@ export const SLASH_COMMANDS = [
     { cmd: '/context',     desc: ['Mostrar uso estimado de contexto/tokens'] },
     { cmd: '/copy',        desc: ['Copiar la última respuesta del asistente al portapapeles'] },
     { cmd: '/cwd',         desc: ['Mostrar el directorio de trabajo actual'] },
+    { cmd: '/debug',       desc: ['Mostrar información técnica de diagnóstico'] },
     { cmd: '/diff',        desc: ['Mostrar git diff de cambios sin confirmar'] },
     { cmd: '/doctor',      desc: ['Ejecutar diagnóstico de la instalación y proveedores'] },
     { cmd: '/download',    desc: ['Descargar un modelo de HuggingFace e importar a Ollama'] },
@@ -207,6 +208,29 @@ export function handleSlashCommand(trimmed, ctx) {
             else { setMenuIndex(0); setFormInput(''); setScreen('model'); }
             return true;
 
+        case '/debug': {
+            const skills = listInstalledSkills();
+            const mcpCfg = loadMcpConfig();
+            const mcpCount = Object.keys(mcpCfg.mcpServers || {}).length;
+
+            const info = [
+                "🛠️ [DEBUG INFO]",
+                `- Provider: ${cfg.provider}`,
+                `- Model: ${cfg.model}`,
+                `- Tools (native): ${tools.length}`,
+                `- MCP Servers: ${mcpCount}`,
+                `- Installed Skills: ${skills.length}`,
+                `- Force ReAct: ${forceReAct ? 'YES' : 'NO'}`,
+                `- Current CWD: ${process.cwd()}`,
+                `- Config Path: ~/.agentlag/config.json`,
+                "",
+                "Sugerencia: Si el prompt es muy grande, intenta reducir skills o servidores MCP."
+            ].join('\n');
+
+            say(info);
+            return true;
+        }
+
         case '/effort': {
             if (!args) {
                 say(`Nivel de esfuerzo actual: ${effortLevel}\nUso: /effort <${EFFORT_LEVELS.join(' | ')}>`);
@@ -322,12 +346,19 @@ export function handleSlashCommand(trimmed, ctx) {
         }
 
         case '/context': {
+            // Estimación simple del prompt del sistema actual
+            const systemPromptText = \`Eres AgentLag... \${formatSkillsIndex(process.cwd())}\`; // Simplificado para el comando
+            const estimatedSystemTokens = Math.ceil(systemPromptText.length / 4);
+
             say([
                 '📊 Contexto',
-                `  • Tokens acumulados: ${totalTokens}`,
-                `  • Mensajes en memoria: ${msgRef.current.length}`,
-                `  • Items en historial UI: ${historyRef.current.length}`,
-                `  • Conversación activa: ${currentConversationRef.current || '(latest)'}`,
+                \`  • Tokens acumulados (sesión): \${totalTokens}\`,
+                \`  • Mensajes en memoria: \${msgRef.current.length}\`,
+                \`  • Items en historial UI: \${historyRef.current.length}\`,
+                \`  • Conversación activa: \${currentConversationRef.current || '(latest)'}\`,
+                \`  • Estimación System Prompt: ~\${estimatedSystemTokens} tokens\`,
+                "",
+                "Tip: Usa /compact si te estás quedando sin tokens en Groq."
             ].join('\n'));
             return true;
         }
