@@ -1,10 +1,6 @@
 import fs from "fs";
 import path from "path";
 import os from "os";
-// ─── commands.js ──────────────────────────────────────────────────────────────
-// Catálogo de slash commands y lógica de ejecución.
-import fs   from 'fs';
-import path from 'path';
 import { spawn, execSync } from 'child_process';
 
 import {
