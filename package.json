@@ -1,6 +1,6 @@
 {
   "name": "agentlag",
-  "version": "1.1.1",
+  "version": "1.1.2",
   "description": "your intelligent agent CLI",
   "type": "module",
   "bin": {
