@@ -492,7 +492,7 @@ const App = ({ config: initCfg }) => {
                 {(item, index) => {
                     if (item.type === 'welcome')   return <WelcomeBox key="welcome" provider={item.provider} model={item.model} />;
                     if (item.type === 'user')      return <UserMessage      key={index} text={item.text} />;
-                    if (item.type === 'assistant') return <AssistantMessage key={index} text={item.text === 'Welcome back Alonso!' ? t('welcome') : item.text} />;
+                    if (item.type === 'assistant') return <AssistantMessage key={index} text={item.text === 'Welcome back!' ? t('welcome') : item.text} />;
                     if (item.type === 'tool')      return (
                         <Box key={index} marginTop={1}>
                             <ToolLine name={item.name} input={item.input} output={item.output} running={false} />
