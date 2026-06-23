@@ -25,7 +25,7 @@ export const EFFORT_LEVELS    = ['low', 'medium', 'high', 'xhigh', 'max'];
 
 // ─── Catálogo ─────────────────────────────────────────────────────────────────
 export const SLASH_COMMANDS = [
-    { cmd: '/mcp',     desc: ['Añadir servidor MCP', '/mcp add-json name {"type":"http","url":"..."}'] },
+    { cmd: '/mcp',         desc: ['Gestionar servidores MCP (list, add, add-json)', '/mcp list | /mcp add name cmd args'] },
     { cmd: '/add-dir',     desc: ['Añadir un directorio al workspace de confianza'] },
     { cmd: '/advisor',     desc: ['Activar/desactivar modelo asesor para decisiones complejas'] },
     { cmd: '/agents',      desc: ['Listar subagentes definidos por el usuario'] },
@@ -65,7 +65,6 @@ export const SLASH_COMMANDS = [
     { cmd: '/import',      desc: ['Importar una conversación por nombre'] },
     { cmd: '/keybindings', desc: ['Mostrar los atajos de teclado disponibles'] },
     { cmd: '/logout',      desc: ['Borrar la API key del proveedor activo'] },
-    { cmd: '/mcp',         desc: ['Listar servidores MCP configurados'] },
     { cmd: '/memory',      desc: ['Ver/editar ~/.agentlag/memory.md (notas del proyecto)'] },
     { cmd: '/model',       desc: ['Cambiar el modelo activo'] },
     { cmd: '/provider',    desc: ['Cambiar el proveedor de LLM activo'] },
@@ -116,25 +115,47 @@ export function handleSlashCommand(trimmed, ctx) {
         }
         case '/mcp': {
             const parts = args?.trim().split(/\s+/);
-            if (parts?.[0] === 'add-json') {
+            const sub = parts?.[0]?.toLowerCase();
+
+            if (sub === 'add' || sub === 'add-json') {
                 const name = parts[1];
-                let jsonStr = '';
+                if (!name) {
+                    say(`Uso: /mcp ${sub} <nombre> ...`);
+                    return true;
+                }
+
+                let serverConfig = {};
                 let scope = 'project';
 
                 const remainder = parts.slice(2).join(' ');
                 const scopeMatch = remainder.match(/--scope\s+(\w+)/);
                 if (scopeMatch) {
                     scope = scopeMatch[1];
-                    jsonStr = remainder.replace(scopeMatch[0], '').trim();
-                } else {
-                    jsonStr = remainder.trim();
                 }
 
-                if (jsonStr.startsWith("'") && jsonStr.endsWith("'")) jsonStr = jsonStr.slice(1, -1);
-                if (jsonStr.startsWith('"') && jsonStr.endsWith('"')) jsonStr = jsonStr.slice(1, -1);
+                if (sub === 'add-json') {
+                    let jsonStr = scopeMatch ? remainder.replace(scopeMatch[0], '').trim() : remainder.trim();
+                    if (jsonStr.startsWith("'") && jsonStr.endsWith("'")) jsonStr = jsonStr.slice(1, -1);
+                    if (jsonStr.startsWith('"') && jsonStr.endsWith('"')) jsonStr = jsonStr.slice(1, -1);
+                    try {
+                        serverConfig = JSON.parse(jsonStr);
+                    } catch (e) {
+                        say(`❌ Error: JSON inválido: ${e.message}`);
+                        return true;
+                    }
+                } else {
+                    // /mcp add name command args...
+                    const cmdArgs = scopeMatch ? remainder.replace(scopeMatch[0], '').trim().split(/\s+/) : remainder.trim().split(/\s+/);
+                    const command = cmdArgs[0];
+                    const argsList = cmdArgs.slice(1);
+                    if (!command) {
+                        say('Uso: /mcp add <nombre> <comando> [args...]');
+                        return true;
+                    }
+                    serverConfig = { command, args: argsList };
+                }
 
                 try {
-                    const serverConfig = JSON.parse(jsonStr);
                     const configDir = scope === 'user'
                         ? path.join(os.homedir(), '.agentlag')
                         : path.join(process.cwd(), '.agentlag');
@@ -151,62 +172,28 @@ export function handleSlashCommand(trimmed, ctx) {
                     fs.writeFileSync(configPath, JSON.stringify(mcpConfig, null, 2));
 
                     say(`✅ Servidor MCP "${name}" añadido al scope ${scope}.`);
+                    rebuildAgentWith();
                     return true;
                 } catch (e) {
-                    say(`❌ Error: JSON inválido o problema al guardar: ${e.message}`);
+                    say(`❌ Error al guardar configuración MCP: ${e.message}`);
                     return true;
                 }
             }
-            say('Uso: /mcp add-json <nombre> \'<json>\' [--scope user|project]');
-            return true;
-        }
-        case 'mcp': {
-            const parts = args?.trim().split(/\s+/);
-            if (parts?.[0] === 'add-json') {
-                // agentlag mcp add-json <nombre> '<json>' [--scope user|project]
-                const name = parts[1];
-                let jsonStr = '';
-                let scope = 'project';
 
-                // Unir el resto para buscar el JSON y el scope
-                const remainder = parts.slice(2).join(' ');
-                const scopeMatch = remainder.match(/--scope\s+(\w+)/);
-                if (scopeMatch) {
-                    scope = scopeMatch[1];
-                    jsonStr = remainder.replace(scopeMatch[0], '').trim();
-                } else {
-                    jsonStr = remainder.trim();
+            // Listar si no hay subcomando o es 'list'
+            const data = loadMcpConfig();
+            const servers = Object.entries(data?.mcpServers || {});
+            if (servers.length === 0) {
+                say(`🔌 No hay servidores MCP configurados.\n\nUso:\n  /mcp add <nombre> <comando> [args...]\n  /mcp add-json <nombre> '<json>'`);
+            } else {
+                const lines = ['🔌 Servidores MCP configurados:'];
+                for (const [name, def] of servers) {
+                    const detail = def.url ? `URL: ${def.url}` : `${def.command || ''} ${(def.args || []).join(' ')}`;
+                    lines.push(`  • ${name}: ${detail}`);
                 }
-
-                // Quitar comillas si las hay
-                if (jsonStr.startsWith("'") && jsonStr.endsWith("'")) jsonStr = jsonStr.slice(1, -1);
-                if (jsonStr.startsWith('"') && jsonStr.endsWith('"')) jsonStr = jsonStr.slice(0, -1);
-
-                try {
-                    const serverConfig = JSON.parse(jsonStr);
-                    const configDir = scope === 'user'
-                        ? path.join(os.homedir(), '.agentlag')
-                        : path.join(process.cwd(), '.agentlag');
-                    const configPath = path.join(configDir, 'mcp.json');
-
-                    if (!fs.existsSync(configDir)) fs.mkdirSync(configDir, { recursive: true });
-
-                    let mcpConfig = { mcpServers: {} };
-                    if (fs.existsSync(configPath)) {
-                        mcpConfig = JSON.parse(fs.readFileSync(configPath, 'utf8'));
-                    }
-
-                    mcpConfig.mcpServers[name] = serverConfig;
-                    fs.writeFileSync(configPath, JSON.stringify(mcpConfig, null, 2));
-
-                    say();
-                    return true;
-                } catch (e) {
-                    say();
-                    return true;
-                }
+                lines.push('\nUso: /mcp list | /mcp add | /mcp add-json');
+                say(lines.join('\n'));
             }
-            say('Uso: /mcp add-json <nombre> '<json>' [--scope user|project]');
             return true;
         }
         case '/help': {
@@ -536,19 +523,6 @@ export function handleSlashCommand(trimmed, ctx) {
             return true;
         }
 
-        case '/mcp': {
-            const data    = loadMcpConfig();
-            const servers = Object.entries(data?.mcpServers || {});
-            if (servers.length === 0) {
-                say(`🔌 No hay servidores MCP configurados.\nCrea ${MCP_FILE} con:\n{\n  "mcpServers": {\n    "playwright": { "command": "npx", "args": ["-y","@playwright/mcp@latest"] }\n  }\n}`);
-            } else {
-                const lines = ['🔌 MCP servers:'];
-                for (const [name, def] of servers)
-                    lines.push(`  • ${name}: ${def.command || ''} ${(def.args || []).join(' ')}`);
-                say(lines.join('\n'));
-            }
-            return true;
-        }
 
         case '/agents': {
             let entries = [];
