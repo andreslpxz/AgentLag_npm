@@ -10,13 +10,17 @@ import { RecordingSession } from './recording_logger.js';
 import { analyzeAndEvolve } from './evolution_engine.js';
 import { addEvolution } from './evolution_store.js';
 import { isToolUnsupportedError, extractFailedGeneration } from './utils.js';
+import { t } from './i18n.js';
 
 export const SPINNERS       = ['✻', '✼', '✽', '✾', '✿'];
-export const THINKING_WORDS = ['Thinking','Reasoning','Analyzing','Computing','Marinating','Levitating','Pondering','Brewing'];
+export const THINKING_WORDS = ['think_1', 'think_2', 'think_3', 'think_4', 'think_5', 'think_6', 'think_7', 'think_8'];
 export const TOOL_ICONS     = { create_file:'●', read_file:'●', edit_file:'●', list_directory:'●', search_in_files:'●', show_diff:'●', apply_patch:'●', run_shell:'●', web_search:'●', list_skills:'●', read_skill:'●', find_skills:'●', add_skill:'●' };
 export const NEEDS_CONFIRM  = new Set(['run_shell', 'create_file', 'edit_file', 'apply_patch', 'add_skill']);
 
-export const randWord = () => THINKING_WORDS[Math.floor(Math.random() * THINKING_WORDS.length)];
+export const randWord = () => {
+    const key = THINKING_WORDS[Math.floor(Math.random() * THINKING_WORDS.length)];
+    return t(key);
+};
 
 // ── Stream del agente ─────────────────────────────────────────────────────────
 
@@ -38,7 +42,7 @@ export async function runAgentTurn(msg, ctx) {
     const session = new RecordingSession(msg);
 
     if (!agent) {
-        setStaticHistory(prev => [...prev, { type: 'assistant', text: '❌ El agente aún no está inicializado.' }]);
+        setStaticHistory(prev => [...prev, { type: 'assistant', text: t('agent_not_initialized') }]);
         return;
     }
 
@@ -142,7 +146,7 @@ async function _streamAgent(agent, msgRef, setStaticHistory, setStatus, setActiv
                     setStatus('idle');
                     const ok = await askConfirm(tc.name, detail);
                     if (!ok) {
-                        setStaticHistory(prev => [...prev, { type: 'assistant', text: '⚠ Acción cancelada por el usuario.' }]);
+                        setStaticHistory(prev => [...prev, { type: 'assistant', text: t('action_cancelled') }]);
                         setStatus('idle');
                         return null;
                     }
@@ -204,7 +208,7 @@ async function _handleAgentError(err, agent, msgRef, setStaticHistory, setStatus
     setAgent, setForceReAct, persistFlag)
 {
     if (err?.message?.includes('Recursion limit')) {
-        setStaticHistory(prev => [...prev, { type: 'assistant', text: '❌ Error: Se ha alcanzado el límite de recursión (30 pasos). La tarea es demasiado compleja o el agente ha entrado en un bucle infinito.' }]);
+        setStaticHistory(prev => [...prev, { type: 'assistant', text: t('recursion_limit_error') }]);
         setStatus('idle');
         return;
     }
@@ -217,8 +221,8 @@ async function _handleAgentError(err, agent, msgRef, setStaticHistory, setStatus
         setStaticHistory(prev => [...prev, {
             type: 'assistant',
             text: salvaged
-                ? 'ℹ️ El proveedor falló al emitir tool calls; activando modo ReAct para los próximos turnos…'
-                : '⚠️ El proveedor no expone tool calling para este modelo. Cambiando a modo ReAct…',
+                ? t('react_activating')
+                : t('no_tool_calling'),
         }]);
         try {
             const reactAgent = await buildAgent({ forceReAct: true });
@@ -234,9 +238,9 @@ async function _handleAgentError(err, agent, msgRef, setStaticHistory, setStatus
             }
         } catch (e) {
             if (e?.message?.includes('Recursion limit')) {
-                setStaticHistory(prev => [...prev, { type: 'assistant', text: '❌ Error: Se ha alcanzado el límite de recursión (30 pasos) en modo ReAct.' }]);
+                setStaticHistory(prev => [...prev, { type: 'assistant', text: t('recursion_limit_react') }]);
             } else {
-                setStaticHistory(prev => [...prev, { type: 'assistant', text: `❌ Error crítico al cambiar a ReAct: ${e?.message || e}` }]);
+                setStaticHistory(prev => [...prev, { type: 'assistant', text: t('critical_react_error', { error: e?.message || e }) }]);
             }
         }
     } else {

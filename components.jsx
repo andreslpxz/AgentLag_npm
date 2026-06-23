@@ -41,7 +41,11 @@ export const AgentLogo = () => (
 export const WelcomeBox = ({ provider, model }) => (
     <Box flexDirection="column" borderStyle="round" borderColor="gray"
          paddingX={2} paddingY={1} marginBottom={1}>
-        <Text bold>Welcome back <Text color="white" bold>Alonso</Text>!</Text>
+        <Box>
+            <Text bold>{t('welcome')} </Text>
+            <Text color="white" bold>Alonso</Text>
+            <Text bold>!</Text>
+        </Box>
         <Newline />
         <AgentLogo />
         <Newline />
@@ -119,7 +123,7 @@ export const ConfirmDialog = ({ toolName, detail, options, selectedIndex }) => (
         <Text color="yellow" bold>⚠  {toolLabel(toolName)}</Text>
         {detail ? <Text color="gray">   {detail.slice(0, 78)}</Text> : null}
         <Newline />
-        <Text color="gray"> Do you want to proceed?</Text>
+        <Text color="gray"> {t('confirm_action')}</Text>
         {options.map((opt, i) => (
             <Box key={i}>
                 {i === selectedIndex
@@ -135,22 +139,22 @@ export const ConfirmDialog = ({ toolName, detail, options, selectedIndex }) => (
 
 export const ShortcutsHelp = () => (
     <Box flexDirection="column">
-        <Text color="gray">  ! for shell mode   double tap esc to clear   ctrl+shift+_ to undo</Text>
+        <Text color="gray">  {t('shell_mode_hint')}   {t('clear_history_hint')}   {t('undo_hint')}</Text>
     </Box>
 );
 
 // ── Pantallas de setup ────────────────────────────────────────────────────────
 
 export const ColorScreen = ({ menuIndex }) => {
-    const opts = ['Auto (match terminal)', 'Dark mode', 'Light mode', 'ANSI colors only'];
+    const opts = [t('color_auto'), t('color_dark'), t('color_light'), t('color_ansi')];
     return (
         <Box flexDirection="column" paddingX={1} paddingY={1}>
-            <Text color="gray">Welcome to AgentLag v{AGENTLAG_VERSION}</Text>
+            <Text color="gray">{t('welcome')} v{AGENTLAG_VERSION}</Text>
             <Text color="gray">{'…'.repeat(69)}</Text><Newline />
             <AgentLogo />
             <Text color="gray">{'─'.repeat(69)}</Text><Newline />
-            <Text>{"Let's get started."}</Text><Newline />
-            <Text color="gray"> Choose the text style that looks best with your terminal</Text><Newline />
+            <Text>{t('lets_get_started')}</Text><Newline />
+            <Text color="gray"> {t('choose_style')}</Text><Newline />
             {opts.map((o, i) => (
                 <Box key={i}>
                     {i === menuIndex
@@ -166,21 +170,21 @@ export const ColorScreen = ({ menuIndex }) => {
 export const TrustScreen = ({ menuIndex }) => (
     <Box flexDirection="column" paddingX={1} paddingY={1}>
         <HR /><Newline />
-        <Text color="gray"> Accessing workspace:</Text>
+        <Text color="gray"> {t('accessing_workspace')}</Text>
         <Text color="cyan"> {process.cwd()}</Text><Newline />
-        <Text color="white"> Quick safety check: Is this a project you created or one you trust?</Text>
-        <Text color="gray"> (Like your own code, a well-known open source project, or work from your team).</Text>
-        <Text color="gray"> If not, take a moment to review what's in this folder first.</Text><Newline />
-        <Text color="gray"> AgentLag will be able to read, edit, and execute files here.</Text>
-        <Text color="cyan"> Security guide</Text><Newline />
-        {['Yes, I trust this folder', 'No, exit'].map((o, i) => (
+        <Text color="white"> {t('safety_check_title')}</Text>
+        <Text color="gray"> {t('safety_check_desc')}</Text>
+        <Text color="gray"> {t('safety_check_review')}</Text><Newline />
+        <Text color="gray"> {t('safety_check_capabilities')}</Text>
+        <Text color="cyan"> {t('security_guide')}</Text><Newline />
+        {[t('trust_yes'), t('trust_no')].map((o, i) => (
             <Box key={i}>
                 {i === menuIndex
                     ? <Text color="cyan">❯ <Text color="white" bold>{(i + 1) + '. ' + o}</Text></Text>
                     : <Text color="gray">  {(i + 1) + '. ' + o}</Text>}
             </Box>
         ))}
-        <Newline /><Text color="gray"> Enter to confirm · Esc to cancel</Text><HR />
+        <Newline /><Text color="gray"> {t('confirm_esc')}</Text><HR />
     </Box>
 );
 
@@ -196,7 +200,7 @@ export const ProviderScreen = ({ menuIndex }) => (
                     : <Box><Text>  </Text><Text color="gray">{p.label.padEnd(16)}</Text><Text color="gray" dimColor>{p.desc}</Text></Box>}
             </Box>
         ))}
-        <Newline /><Text color="gray"> Enter to select · Esc to go back</Text>
+        <Newline /><Text color="gray"> {t('back_esc')}</Text>
         <Text color="gray">{'╌'.repeat(69)}</Text>
     </Box>
 );
@@ -209,8 +213,8 @@ export const ApiKeyScreen = ({ provider, inputText, showError }) => {
             <Text color="gray">{'─'.repeat(69)}</Text>
             <Text bold>{t("enter_api_key")} <Text color="#00FF87">{provider?.label}</Text></Text><Newline />
             <Text color="gray"> {noKey
-                ? 'No necesita API key — se ejecuta localmente'
-                : 'Your key is stored locally in ~/.agentlag/config.json'}</Text>
+                ? t('key_not_needed')
+                : t('key_stored_locally')}</Text>
             <Newline />
             <Box borderStyle="single" borderColor={showError ? 'red' : 'cyan'} paddingX={1}>
                 <Text color="gray">Key: </Text>
@@ -219,7 +223,7 @@ export const ApiKeyScreen = ({ provider, inputText, showError }) => {
             </Box>
             {showError && <Text color="red"> ⚠ API key es requerida para {provider?.label}</Text>}
             <Newline />
-            <Text color="gray"> Enter to confirm · Esc to go back</Text>
+            <Text color="gray"> {t('confirm_esc')}</Text>
             <Text color="gray">{'╌'.repeat(69)}</Text>
         </Box>
     );
@@ -254,7 +258,7 @@ export const ModelScreen = ({ provider, menuIndex, inputText, ollamaModels, olla
     } else {
         suggestions = PROVIDER_MODELS[provider?.id] || [];
     }
-    const listLabel = isOllama && ollamaStatus === 'running' ? 'Modelos instalados' : 'Suggestions';
+    const listLabel = isOllama && ollamaStatus === 'running' ? t('installed_models_label') : t('suggestions_label');
     return (
         <Box flexDirection="column" paddingX={1} paddingY={1}>
             <AgentLogo /><Newline />
@@ -265,8 +269,8 @@ export const ModelScreen = ({ provider, menuIndex, inputText, ollamaModels, olla
             </Text><Newline />
             {isHF && (
                 <Box flexDirection="column">
-                    <Text color="gray"> Formato: org/modelo (ej: inclusionai/ling-2.6-1t)</Text>
-                    <Text color="gray"> Se descargará via Ollama y se usará localmente.</Text>
+                    <Text color="gray"> {t('hf_format')}</Text>
+                    <Text color="gray"> {t('hf_desc')}</Text>
                     <Newline />
                 </Box>
             )}
@@ -275,27 +279,27 @@ export const ModelScreen = ({ provider, menuIndex, inputText, ollamaModels, olla
             </Box>
             <Newline />
             {isOllama && ollamaStatus === 'checking' && (
-                <Text color="yellow"> ⏳ Verificando conexión con Ollama...</Text>
+                <Text color="yellow"> {t('ollama_verifying')}</Text>
             )}
             {isOllama && ollamaStatus === 'not_running' && (
                 <Box flexDirection="column">
-                    <Text color="red"> ⚠ Ollama no está corriendo.</Text>
-                    <Text color="gray"> Inicia el servidor con: </Text>
+                    <Text color="red"> {t('ollama_not_running')}</Text>
+                    <Text color="gray"> {t('ollama_start_hint')} </Text>
                     <Text color="cyan">   ollama serve</Text>
                     <Newline />
-                    <Text color="gray"> Puedes escribir el nombre del modelo manualmente.</Text>
+                    <Text color="gray"> {t('ollama_manual_hint')}</Text>
                 </Box>
             )}
             {isOllama && ollamaStatus === 'running' && ollamaModels.length === 0 && (
                 <Box flexDirection="column">
-                    <Text color="yellow"> ⚠ Ollama está corriendo pero no hay modelos descargados.</Text>
-                    <Text color="gray"> Descarga uno con: </Text>
+                    <Text color="yellow"> {t('ollama_no_models')}</Text>
+                    <Text color="gray"> {t('ollama_pull_hint')} </Text>
                     <Text color="cyan">   ollama pull llama3</Text>
                 </Box>
             )}
             {suggestions.length > 0 && (
                 <Box flexDirection="column">
-                    <Text color="gray"> {listLabel} (↑↓ pick · Enter confirm):</Text>
+                    <Text color="gray"> {listLabel} {t('pick_confirm_hint')}:</Text>
                     {suggestions.map((m, i) => (
                         <Box key={m}>
                             {i === menuIndex
@@ -306,7 +310,7 @@ export const ModelScreen = ({ provider, menuIndex, inputText, ollamaModels, olla
                 </Box>
             )}
             <Newline />
-            <Text color="gray"> Enter to confirm · Esc to go back</Text>
+            <Text color="gray"> {t('confirm_esc')}</Text>
             <Text color="gray">{'╌'.repeat(69)}</Text>
         </Box>
     );
@@ -336,17 +340,22 @@ export const CommandMenu = ({ input, selectedIndex, slashCommands }) => {
                 const cc  = sel ? 'cyan' : 'white';
                 const dc  = sel ? 'cyan' : 'gray';
                 const pad = ' '.repeat(Math.max(0, 18 - item.cmd.length));
+
+                // Translate descriptions at render time
+                const desc1 = t(item.desc[0]);
+                const desc2 = item.desc[1] ? t(item.desc[1]) : null;
+
                 return (
                     <Box key={item.cmd} flexDirection="column">
                         <Box>
                             <Text color={cc}>{item.cmd}</Text>
                             <Text>{pad}</Text>
-                            <Text color={dc}>{item.desc[0]}</Text>
+                            <Text color={dc}>{desc1}</Text>
                         </Box>
-                        {item.desc[1] && (
+                        {desc2 && (
                             <Box>
                                 <Text>{' '.repeat(18)}</Text>
-                                <Text color={dc}>{item.desc[1]}</Text>
+                                <Text color={dc}>{desc2}</Text>
                             </Box>
                         )}
                     </Box>
