@@ -64,7 +64,7 @@ const App = ({ config: initCfg }) => {
             return await ag.invoke({ messages: [new HumanMessage(p)] });
         });
     }
-    const [thinkWord,   setThinkWord]  = useState('Thinking');
+    const [thinkWord,   setThinkWord]  = useState(t('thinking'));
     const [thinkStart,  setThinkStart] = useState(null);
     const [elapsed,     setElapsed]    = useState(0);
     const [spinFrame,   setSpinFrame]  = useState(0);
@@ -155,13 +155,13 @@ const App = ({ config: initCfg }) => {
                 .then(ag => { setAgent(ag); setAgentError(null); })
                 .catch(err => {
                     const msg = err?.message || String(err || 'Unknown error'); setAgentError(msg);
-                    setStaticHistory(prev => [...prev, { type: 'assistant', text: '❌ Error al iniciar el agente: ' + msg }]);
+                    setStaticHistory(prev => [...prev, { type: 'assistant', text: t('error_starting_agent', { error: msg }) }]);
                 });
             const pending = getEvolutions();
             if (pending.length > 0) {
                 setStaticHistory(prev => [...prev, {
                     type: 'assistant',
-                    text: `💡 ${pending.length} evoluciones pendientes — usa /evolve para revisarlas`,
+                    text: t('pending_evolutions', { count: pending.length }),
                     ephemeral: true,
                 }]);
             }
@@ -192,7 +192,7 @@ const App = ({ config: initCfg }) => {
             setAgent(next);
             return true;
         } catch (e) {
-            say(`❌ Error reconstruyendo el agente: ${e.message}`);
+            say(t('error_rebuilding_agent', { error: e.message }));
             return false;
         }
     }, [say]);
@@ -310,7 +310,7 @@ const App = ({ config: initCfg }) => {
 
                 if (selProvider?.id === 'huggingface') {
                     const hfRepo = model.replace(/^hf\.co\//, '');
-                    setDlProgress(0); setDlStatus('Descargando desde HuggingFace...'); setScreen('downloading');
+                    setDlProgress(0); setDlStatus(t('dl_status_starting')); setScreen('downloading');
                     downloadHFModel(hfRepo, {
                         onProgress: setDlProgress,
                         onStatus:   setDlStatus,
@@ -321,7 +321,7 @@ const App = ({ config: initCfg }) => {
                             setTimeout(() => { setFormInput(''); setScreen('main'); }, 1000);
                         },
                         onError: (msg) => {
-                            setDlStatus(msg);
+                        setDlStatus(t('error_prefix', { error: msg }));
                             setTimeout(() => { setFormInput(''); setScreen('model'); }, 4000);
                         },
                     });
@@ -347,7 +347,7 @@ const App = ({ config: initCfg }) => {
             if (key.ctrl && str === 'o') {
                 setIsVerbose(p => {
                     const next = !p;
-                    say(`ℹ️ Verbose mode is now ${next ? 'ON' : 'OFF'}`);
+                    say(next ? t('verbose_on') : t('verbose_off'));
                     return next;
                 });
                 return;
@@ -355,7 +355,7 @@ const App = ({ config: initCfg }) => {
             if (key.ctrl && str === 't') {
                 setShowTasks(p => {
                     const next = !p;
-                    say(`ℹ️ Tasks mode is now ${next ? 'ON' : 'OFF'}`);
+                    say(next ? t('tasks_on') : t('tasks_off'));
                     return next;
                 });
                 return;
@@ -393,7 +393,7 @@ const App = ({ config: initCfg }) => {
             if (key.ctrl && str === 'z') {
                 abortCtrlRef.current?.abort();
                 setStatus('idle'); setActiveTool(null); setThinkStart(null);
-                setStaticHistory(prev => [...prev, { type: 'assistant', text: '🛑 Ejecución cancelada por el usuario.' }]);
+                setStaticHistory(prev => [...prev, { type: 'assistant', text: t('execution_cancelled_user') }]);
             }
             return;
         }
@@ -422,16 +422,16 @@ const App = ({ config: initCfg }) => {
             if (trimmed.startsWith('/download')) {
                 const modelName = trimmed.replace('/download', '').trim().replace(/^hf\.co\//, '');
                 if (!modelName) {
-                    say('Uso: /download org/modelo\nEjemplo: /download inclusionai/ling-2.6-1t\n\nDescarga un modelo de HuggingFace e importa a Ollama.');
+                    say(t('download_usage'));
                     setInput(''); return;
                 }
-                say(`⏳ Descargando modelo: ${modelName}\n   via huggingface-cli download\n   Esto puede tardar varios minutos...`);
+                say(t('downloading_model', { name: modelName }));
                 setInput('');
                 downloadHFModel(modelName, {
                     onProgress: () => {},
                     onStatus:   () => {},
-                    onDone: (name) => say(`✅ Modelo ${name} listo!\n\nUsa /config para seleccionarlo como modelo activo.`),
-                    onError: (msg) => say(`❌ ${msg}`),
+                    onDone: (name) => say(t('model_ready', { name })),
+                    onError: (msg) => say(t('error_prefix', { error: msg })),
                 });
                 return;
             }
@@ -492,7 +492,7 @@ const App = ({ config: initCfg }) => {
                 {(item, index) => {
                     if (item.type === 'welcome')   return <WelcomeBox key="welcome" provider={item.provider} model={item.model} />;
                     if (item.type === 'user')      return <UserMessage      key={index} text={item.text} />;
-                    if (item.type === 'assistant') return <AssistantMessage key={index} text={item.text === 'Welcome back!' ? t('welcome') : item.text} />;
+                    if (item.type === 'assistant') return <AssistantMessage key={index} text={(item.text === 'Welcome back!' || item.text === '¡Bienvenido de nuevo!') ? t('welcome') : item.text} />;
                     if (item.type === 'tool')      return (
                         <Box key={index} marginTop={1}>
                             <ToolLine name={item.name} input={item.input} output={item.output} running={false} />
@@ -540,20 +540,20 @@ const App = ({ config: initCfg }) => {
                     </Box>
                 )}
 
-                {!pendingConfirm && isWorking && <Text color="gray">  esc to interrupt</Text>}
+                {!pendingConfirm && isWorking && <Text color="gray">  {t('esc_to_interrupt')}</Text>}
                 {!pendingConfirm && !isWorking && input === '?'        && <ShortcutsHelp />}
                 {!pendingConfirm && !isWorking && input.startsWith('/') && (
                     <CommandMenu input={input} selectedIndex={cmdIndex} slashCommands={SLASH_COMMANDS} />
                 )}
                 {!pendingConfirm && !isWorking && input !== '?' && !input.startsWith('/') && (
                     <Box>
-                        <Text color="gray">  ? for shortcuts</Text>
+                        <Text color="gray">  {t('shortcuts_hint')}</Text>
                         <Text color="gray">{' '.repeat(40)}</Text>
                         <Text color="white">●</Text>
                         <Text color="gray"> {effortLevel} · /effort</Text>
-                        {focusMode      && <Text color="magenta"> · focus</Text>}
-                        {forceReAct     && <Text color="yellow">  · react</Text>}
-                        {advisorEnabled && <Text color="cyan">   · advisor</Text>}
+                        {focusMode      && <Text color="magenta"> · {t('focus')}</Text>}
+                        {forceReAct     && <Text color="yellow">  · {t('react')}</Text>}
+                        {advisorEnabled && <Text color="cyan">   · {t('advisor')}</Text>}
                     </Box>
                 )}
             </Box>
@@ -576,32 +576,32 @@ function _handleEvolveCommand(trimmed, say, setStaticHistory) {
         if (latest) {
             applyEvolution(latest);
             removeEvolution(latest.id);
-            setStaticHistory(prev => [...prev, { type: 'assistant', text: `✅ Habilidad ${latest.skillName} evolucionada y guardada en el registro SQLite.` }]);
+            setStaticHistory(prev => [...prev, { type: 'assistant', text: t('cmd_evolve_applied', { name: latest.skillName }) }]);
         } else {
-            setStaticHistory(prev => [...prev, { type: 'assistant', text: '❌ No hay evoluciones pendientes para aplicar.' }]);
+            setStaticHistory(prev => [...prev, { type: 'assistant', text: t('cmd_evolve_none') }]);
         }
     } else if (sub === 'list') {
         if (pending.length === 0) {
-            setStaticHistory(prev => [...prev, { type: 'assistant', text: 'No hay evoluciones pendientes.' }]);
+            setStaticHistory(prev => [...prev, { type: 'assistant', text: t('cmd_evolve_list_empty') }]);
         } else {
-            const lines = ['🧩 Evoluciones pendientes:', ''];
+            const lines = [t('cmd_evolve_list_title'), ''];
             pending.forEach((ev, i) => {
                 lines.push(`  ${i + 1}. [${ev.skillName}] ${ev.reason.slice(0, 60)}${ev.reason.length > 60 ? '...' : ''}`);
                 lines.push(`     ID: ${ev.id}`);
             });
-            lines.push('\nUsa /evolve apply <num> o /evolve discard <num>');
+            lines.push('\n' + t('cmd_evolve_usage'));
             setStaticHistory(prev => [...prev, { type: 'assistant', text: lines.join('\n') }]);
         }
     } else if (sub === 'apply' && arg) {
         const target = pending[parseInt(arg) - 1];
-        if (target) { applyEvolution(target); removeEvolution(target.id); setStaticHistory(prev => [...prev, { type: 'assistant', text: `✅ Habilidad ${target.skillName} evolucionada.` }]); }
-        else          setStaticHistory(prev => [...prev, { type: 'assistant', text: `❌ Índice ${arg} no válido.` }]);
+        if (target) { applyEvolution(target); removeEvolution(target.id); setStaticHistory(prev => [...prev, { type: 'assistant', text: t('cmd_evolve_applied', { name: target.skillName }) }]); }
+        else          setStaticHistory(prev => [...prev, { type: 'assistant', text: t('cmd_evolve_invalid_index', { index: arg }) }]);
     } else if (sub === 'discard' && arg) {
         const target = pending[parseInt(arg) - 1];
-        if (target) { removeEvolution(target.id); setStaticHistory(prev => [...prev, { type: 'assistant', text: `🗑 Evolución ${target.id} descartada.` }]); }
-        else          setStaticHistory(prev => [...prev, { type: 'assistant', text: `❌ Índice ${arg} no válido.` }]);
+        if (target) { removeEvolution(target.id); setStaticHistory(prev => [...prev, { type: 'assistant', text: t('cmd_evolve_discarded', { id: target.id }) }]); }
+        else          setStaticHistory(prev => [...prev, { type: 'assistant', text: t('cmd_evolve_invalid_index', { index: arg }) }]);
     } else {
-        setStaticHistory(prev => [...prev, { type: 'assistant', text: 'Uso: /evolve [list | apply <n> | discard <n>]' }]);
+        setStaticHistory(prev => [...prev, { type: 'assistant', text: t('cmd_evolve_usage_full') }]);
     }
 }
 

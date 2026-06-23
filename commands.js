@@ -24,60 +24,62 @@ export const AGENTLAG_VERSION = pkg.version;
 export const EFFORT_LEVELS    = ['low', 'medium', 'high', 'xhigh', 'max'];
 
 // ─── Catálogo ─────────────────────────────────────────────────────────────────
+import { t } from './i18n.js';
+
 export const SLASH_COMMANDS = [
-    { cmd: '/mcp',         desc: ['Gestionar servidores MCP (list, add, add-json)', '/mcp list | /mcp add name cmd args'] },
-    { cmd: '/add-dir',     desc: ['Añadir un directorio al workspace de confianza'] },
-    { cmd: '/advisor',     desc: ['Activar/desactivar modelo asesor para decisiones complejas'] },
-    { cmd: '/agents',      desc: ['Listar subagentes definidos por el usuario'] },
-    { cmd: '/branch',      desc: ['Guardar la conversación actual con un nuevo nombre'] },
-    { cmd: '/btw',         desc: ['Lanzar una pregunta paralela sin romper el flujo'] },
-    { cmd: '/clear',       desc: ['Limpiar el historial de la conversación'] },
-    { cmd: '/color',       desc: ['Volver a abrir el selector de tema/color'] },
-    { cmd: '/compact',     desc: ['Resumir el historial para liberar contexto'] },
-    { cmd: '/config',      desc: ['Reiniciar y volver a correr el wizard completo'] },
-    { cmd: '/context',     desc: ['Mostrar uso estimado de contexto/tokens'] },
-    { cmd: '/copy',        desc: ['Copiar la última respuesta del asistente al portapapeles'] },
-    { cmd: '/cwd',         desc: ['Mostrar el directorio de trabajo actual'] },
-    { cmd: '/debug',       desc: ['Mostrar información técnica de diagnóstico'] },
-    { cmd: '/diff',        desc: ['Mostrar git diff de cambios sin confirmar'] },
-    { cmd: '/doctor',      desc: ['Ejecutar diagnóstico de la instalación y proveedores'] },
-    { cmd: '/download',    desc: ['Descargar un modelo de HuggingFace e importar a Ollama'] },
-    { cmd: '/effort',      desc: ['Ajustar el nivel de esfuerzo del modelo (low|medium|high|xhigh|max)'] },
-    { cmd: '/evolve',      desc: ['Aplicar la última evolución de habilidad sugerida'] },
-    { cmd: '/exit',        desc: ['Guardar la sesión y salir'] },
-    { cmd: '/export',      desc: ['Exportar la conversación a un archivo markdown'] },
-    { cmd: '/deepsearch',  desc: ['Busca en profundidad sobre un tema y guarda los resultados en un .md'] },
-    { cmd: '/standup',     desc: ['Genera un resumen del día listo para Slack/Teams basado en la sesión'] },
-    { cmd: '/review',      desc: ['Code review completo de un archivo: bugs, mejoras, seguridad'] },
-    { cmd: '/changelog',   desc: ['Lee los commits de git y genera un CHANGELOG.md automático'] },
-    { cmd: '/todo',        desc: ['Escanea el proyecto buscando TODO/FIXME/HACK y los consolida en un .md'] },
-    { cmd: '/audit',       desc: ['Auditoría de seguridad: dependencias vulnerables, secrets expuestos'] },
-    { cmd: '/explain',     desc: ['Genera documentación técnica de un archivo y la guarda en .md'] },
-    { cmd: '/diagram',     desc: ['Analiza el codebase y genera un diagrama de arquitectura en Mermaid'] },
-    { cmd: '/task',        desc: ['Divide una tarea en subtareas y las delega a subagentes en paralelo'] },
-    { cmd: '/draft',       desc: ['Genera borradores: email, PR description, issue de GitHub'] },
-    { cmd: '/compare',     desc: ['Compara dos archivos semánticamente y muestra diferencias clave'] },
-    { cmd: '/feedback',    desc: ['Abrir la página de issues de GitHub para enviar feedback'] },
-    { cmd: '/focus',       desc: ['Toggle modo focus (oculta tool spam)'] },
-    { cmd: '/help',        desc: ['Mostrar todos los comandos disponibles'] },
-    { cmd: '/hooks',       desc: ['Listar hooks configurados (~/.agentlag/hooks.json)'] },
-    { cmd: '/ide',         desc: ['Mostrar estado de la integración con IDE'] },
-    { cmd: '/import',      desc: ['Importar una conversación por nombre'] },
-    { cmd: '/keybindings', desc: ['Mostrar los atajos de teclado disponibles'] },
-    { cmd: '/logout',      desc: ['Borrar la API key del proveedor activo'] },
-    { cmd: '/memory',      desc: ['Ver/editar ~/.agentlag/memory.md (notas del proyecto)'] },
-    { cmd: '/model',       desc: ['Cambiar el modelo activo'] },
-    { cmd: '/provider',    desc: ['Cambiar el proveedor de LLM activo'] },
-    { cmd: '/quit',        desc: ['Guardar la sesión y salir'] },
-    { cmd: '/react',       desc: ['Toggle modo ReAct (forzar fallback sin tools nativas)'] },
-    { cmd: '/rename',      desc: ['Renombrar la conversación activa'] },
-    { cmd: '/resume',      desc: ['Reanudar una conversación guardada por nombre'] },
-    { cmd: '/sessions',    desc: ['Listar conversaciones guardadas en el proyecto'] },
-    { cmd: '/schedule',    desc: ['Gestionar tareas programadas (list|add|remove)'] },
-    { cmd: '/server',      desc: ['Iniciar el servidor web de AgentLag'] },
-    { cmd: '/bot',         desc: ['Iniciar el bot de Telegram de AgentLag'] },
-    { cmd: '/skills',      desc: ['Listar, leer, buscar o instalar skills de skills.sh'] },
-    { cmd: '/version',     desc: ['Mostrar la versión de AgentLag'] },
+    { cmd: '/mcp',         desc: ['cmd_mcp_desc', 'cmd_mcp_usage'] },
+    { cmd: '/add-dir',     desc: ['cmd_add_dir_desc'] },
+    { cmd: '/advisor',     desc: ['cmd_advisor_desc'] },
+    { cmd: '/agents',      desc: ['cmd_agents_desc'] },
+    { cmd: '/branch',      desc: ['cmd_branch_desc'] },
+    { cmd: '/btw',         desc: ['cmd_btw_desc'] },
+    { cmd: '/clear',       desc: ['cmd_clear_desc'] },
+    { cmd: '/color',       desc: ['cmd_color_desc'] },
+    { cmd: '/compact',     desc: ['cmd_compact_desc'] },
+    { cmd: '/config',      desc: ['cmd_config_desc'] },
+    { cmd: '/context',     desc: ['cmd_context_desc'] },
+    { cmd: '/copy',        desc: ['cmd_copy_desc'] },
+    { cmd: '/cwd',         desc: ['cmd_cwd_desc'] },
+    { cmd: '/debug',       desc: ['cmd_debug_desc'] },
+    { cmd: '/diff',        desc: ['cmd_diff_desc'] },
+    { cmd: '/doctor',      desc: ['cmd_doctor_desc'] },
+    { cmd: '/download',    desc: ['cmd_download_desc'] },
+    { cmd: '/effort',      desc: ['cmd_effort_desc'] },
+    { cmd: '/evolve',      desc: ['cmd_evolve_desc'] },
+    { cmd: '/exit',        desc: ['cmd_exit_desc'] },
+    { cmd: '/export',      desc: ['cmd_export_desc'] },
+    { cmd: '/deepsearch',  desc: ['cmd_deepsearch_desc'] },
+    { cmd: '/standup',     desc: ['cmd_standup_desc'] },
+    { cmd: '/review',      desc: ['cmd_review_desc'] },
+    { cmd: '/changelog',   desc: ['cmd_changelog_desc'] },
+    { cmd: '/todo',        desc: ['cmd_todo_desc'] },
+    { cmd: '/audit',       desc: ['cmd_audit_desc'] },
+    { cmd: '/explain',     desc: ['cmd_explain_desc'] },
+    { cmd: '/diagram',     desc: ['cmd_diagram_desc'] },
+    { cmd: '/task',        desc: ['cmd_task_desc'] },
+    { cmd: '/draft',       desc: ['cmd_draft_desc'] },
+    { cmd: '/compare',     desc: ['cmd_compare_desc'] },
+    { cmd: '/feedback',    desc: ['cmd_feedback_desc'] },
+    { cmd: '/focus',       desc: ['cmd_focus_desc'] },
+    { cmd: '/help',        desc: ['cmd_help_desc'] },
+    { cmd: '/hooks',       desc: ['cmd_hooks_desc'] },
+    { cmd: '/ide',         desc: ['cmd_ide_desc'] },
+    { cmd: '/import',      desc: ['cmd_import_desc'] },
+    { cmd: '/keybindings', desc: ['cmd_keybindings_desc'] },
+    { cmd: '/logout',      desc: ['cmd_logout_desc'] },
+    { cmd: '/memory',      desc: ['cmd_memory_desc'] },
+    { cmd: '/model',       desc: ['cmd_model_desc'] },
+    { cmd: '/provider',    desc: ['cmd_provider_desc'] },
+    { cmd: '/quit',        desc: ['cmd_quit_desc'] },
+    { cmd: '/react',       desc: ['cmd_react_desc'] },
+    { cmd: '/rename',      desc: ['cmd_rename_desc'] },
+    { cmd: '/resume',      desc: ['cmd_resume_desc'] },
+    { cmd: '/sessions',    desc: ['cmd_sessions_desc'] },
+    { cmd: '/schedule',    desc: ['cmd_schedule_desc'] },
+    { cmd: '/server',      desc: ['cmd_server_desc'] },
+    { cmd: '/bot',         desc: ['cmd_bot_desc'] },
+    { cmd: '/skills',      desc: ['cmd_skills_desc'] },
+    { cmd: '/version',     desc: ['cmd_version_desc'] },
 ];
 
 // ─── Handler principal ────────────────────────────────────────────────────────
@@ -120,7 +122,7 @@ export function handleSlashCommand(trimmed, ctx) {
             if (sub === 'add' || sub === 'add-json') {
                 const name = parts[1];
                 if (!name) {
-                    say(`Uso: /mcp ${sub} <nombre> ...`);
+                    say(t('cmd_mcp_usage_error', { sub }));
                     return true;
                 }
 
@@ -140,7 +142,7 @@ export function handleSlashCommand(trimmed, ctx) {
                     try {
                         serverConfig = JSON.parse(jsonStr);
                     } catch (e) {
-                        say(`❌ Error: JSON inválido: ${e.message}`);
+                        say(t('cmd_mcp_json_error', { error: e.message }));
                         return true;
                     }
                 } else {
@@ -149,7 +151,7 @@ export function handleSlashCommand(trimmed, ctx) {
                     const command = cmdArgs[0];
                     const argsList = cmdArgs.slice(1);
                     if (!command) {
-                        say('Uso: /mcp add <nombre> <comando> [args...]');
+                        say(t('cmd_mcp_add_error'));
                         return true;
                     }
                     serverConfig = { command, args: argsList };
@@ -171,11 +173,11 @@ export function handleSlashCommand(trimmed, ctx) {
                     mcpConfig.mcpServers[name] = serverConfig;
                     fs.writeFileSync(configPath, JSON.stringify(mcpConfig, null, 2));
 
-                    say(`✅ Servidor MCP "${name}" añadido al scope ${scope}.`);
+                    say(t('cmd_mcp_added', { name, scope }));
                     rebuildAgentWith();
                     return true;
                 } catch (e) {
-                    say(`❌ Error al guardar configuración MCP: ${e.message}`);
+                say(t('error_prefix', { error: e.message }));
                     return true;
                 }
             }
@@ -184,14 +186,14 @@ export function handleSlashCommand(trimmed, ctx) {
             const data = loadMcpConfig();
             const servers = Object.entries(data?.mcpServers || {});
             if (servers.length === 0) {
-                say(`🔌 No hay servidores MCP configurados.\n\nUso:\n  /mcp add <nombre> <comando> [args...]\n  /mcp add-json <nombre> '<json>'`);
+                say(t('cmd_mcp_none'));
             } else {
-                const lines = ['🔌 Servidores MCP configurados:'];
+                const lines = [t('cmd_mcp_config_list')];
                 for (const [name, def] of servers) {
                     const detail = def.url ? `URL: ${def.url}` : `${def.command || ''} ${(def.args || []).join(' ')}`;
                     lines.push(`  • ${name}: ${detail}`);
                 }
-                lines.push('\nUso: /mcp list | /mcp add | /mcp add-json');
+                lines.push(t('cmd_mcp_list_usage'));
                 say(lines.join('\n'));
             }
             return true;
@@ -199,9 +201,12 @@ export function handleSlashCommand(trimmed, ctx) {
         case '/help': {
             const width   = Math.max(...SLASH_COMMANDS.map(c => c.cmd.length));
             const helpText = SLASH_COMMANDS
-                .map(c => `  ${c.cmd.padEnd(width + 2)} ${c.desc.join(' ')}`)
+                .map(c => {
+                    const descText = c.desc.map(k => t(k)).join(' ');
+                    return `  ${c.cmd.padEnd(width + 2)} ${descText}`;
+                })
                 .join('\n');
-            say(`Comandos disponibles:\n${helpText}`);
+            say(`${t('cmd_help_available')}:\n${helpText}`);
             return true;
         }
 
@@ -210,51 +215,56 @@ export function handleSlashCommand(trimmed, ctx) {
             const sub   = parts[0];
             if (sub === 'list' || !sub) {
                 const tasks = schedulerRef.current.listTasks();
-                if (tasks.length === 0) say('No hay tareas programadas.');
+                if (tasks.length === 0) say(t('cmd_schedule_none'));
                 else {
-                    const lines = ['📅 Tareas programadas:', ''];
+                    const lines = [t('cmd_schedule_list'), ''];
                     tasks.forEach(t => lines.push(`  • ${t.id} [${t.cronExp}]: ${t.prompt}`));
                     say(lines.join('\n'));
                 }
             } else if (sub === 'add') {
                 const match = args.match(/add "([^"]+)" "([^"]+)" "([^"]+)"/);
-                if (!match) say('Uso: /schedule add "id" "cron" "prompt"');
+                if (!match) say(t('cmd_schedule_add_usage'));
                 else {
                     try {
                         schedulerRef.current.scheduleTask(match[1], match[2], match[3]);
-                        say(`✅ Tarea ${match[1]} programada.`);
+                        say(t('cmd_schedule_added', { id: match[1] }));
                     } catch (err) {
-                        say(`❌ Error al programar tarea: ${err.message}`);
+                        say(t('cmd_schedule_add_error', { error: err.message }));
                     }
                 }
             } else if (sub === 'remove') {
-                if (!parts[1]) say('Uso: /schedule remove <id>');
+                if (!parts[1]) say(t('cmd_schedule_remove_usage'));
                 else {
                     const ok = schedulerRef.current.removeTask(parts[1]);
-                    say(ok ? `✅ Tarea ${parts[1]} eliminada.` : `❌ Tarea ${parts[1]} no encontrada.`);
+                    say(ok ? t('cmd_schedule_removed', { id: parts[1] }) : t('cmd_schedule_not_found', { id: parts[1] }));
                 }
             }
             return true;
         }
 
         case '/server': {
-            say('🚀 Iniciando servidor en puerto ' + (process.env.PORT || 3000) + '...');
+            say(t('cmd_server_starting', { port: process.env.PORT || 3000 }));
             spawn('node', ['server.js'], { detached: true, stdio: 'ignore' }).unref();
             return true;
         }
 
         case '/bot': {
-            say('🤖 Iniciando bot de Telegram...');
+            say(t('cmd_bot_starting'));
             spawn('node', ['telegram.js'], { detached: true, stdio: 'ignore' }).unref();
             return true;
         }
 
         case '/version':
-            say(`AgentLag v${AGENTLAG_VERSION}\nNode ${process.version} · ${process.platform}/${process.arch}`);
+            say(t('cmd_version_info', {
+                version: AGENTLAG_VERSION,
+                node: process.version,
+                platform: process.platform,
+                arch: process.arch
+            }));
             return true;
 
         case '/cwd':
-            say(`📁 ${process.cwd()}`);
+            say(t('cmd_cwd_info', { cwd: process.cwd() }));
             return true;
 
         case '/exit':
@@ -301,17 +311,17 @@ export function handleSlashCommand(trimmed, ctx) {
             const mcpCount = Object.keys(mcpCfg.mcpServers || {}).length;
 
             const info = [
-                "🛠️ [DEBUG INFO]",
-                `- Provider: ${cfg.provider}`,
-                `- Model: ${cfg.model}`,
-                `- Tools (native): ${tools.length}`,
-                `- MCP Servers: ${mcpCount}`,
-                `- Installed Skills: ${skills.length}`,
-                `- Force ReAct: ${forceReAct ? 'YES' : 'NO'}`,
+                t('cmd_debug_title'),
+                `- ${t('label_provider')}: ${cfg.current.provider}`,
+                `- ${t('label_model')}: ${cfg.current.model}`,
+                `- ${t('label_tools_native')}: ${tools.length}`,
+                `- ${t('label_mcp_servers')}: ${mcpCount}`,
+                `- ${t('label_installed_skills')}: ${skills.length}`,
+                `- ${t('label_force_react')}: ${forceReAct ? t('label_yes').toUpperCase() : t('label_no').toUpperCase()}`,
                 `- Current CWD: ${process.cwd()}`,
                 `- Config Path: ~/.agentlag/config.json`,
                 "",
-                "Sugerencia: Si el prompt es muy grande, intenta reducir skills o servidores MCP."
+                t('cmd_debug_tip')
             ].join('\n');
 
             say(info);
@@ -319,18 +329,19 @@ export function handleSlashCommand(trimmed, ctx) {
         }
 
         case '/effort': {
+            const levelsStr = EFFORT_LEVELS.join(' | ');
             if (!args) {
-                say(`Nivel de esfuerzo actual: ${effortLevel}\nUso: /effort <${EFFORT_LEVELS.join(' | ')}>`);
+                say(t('cmd_effort_info', { level: effortLevel, levels: levelsStr }));
                 return true;
             }
             const lvl = args.toLowerCase();
             if (!EFFORT_LEVELS.includes(lvl)) {
-                say(`❌ Nivel desconocido "${args}". Opciones: ${EFFORT_LEVELS.join(', ')}.`);
+                say(t('cmd_effort_error', { args, levels: EFFORT_LEVELS.join(', ') }));
                 return true;
             }
             setEffortLevel(lvl);
             persistFlag('effort', lvl);
-            say(`✅ Effort = ${lvl}`);
+            say(t('cmd_effort_ok', { level: lvl }));
             return true;
         }
 
@@ -338,7 +349,7 @@ export function handleSlashCommand(trimmed, ctx) {
             const next = !focusMode;
             setFocusMode(next);
             persistFlag('focusMode', next);
-            say(`🎯 Focus mode: ${next ? 'ON (oculta tools)' : 'OFF'}`);
+            say(next ? t('cmd_focus_on') : t('cmd_focus_off'));
             return true;
         }
 
@@ -346,7 +357,7 @@ export function handleSlashCommand(trimmed, ctx) {
             const next = !forceReAct;
             setForceReAct(next);
             persistFlag('forceReAct', next);
-            say(`🔁 ReAct forzado: ${next ? 'ON' : 'OFF'}\nReconstruyendo agente…`);
+            say(next ? t('cmd_react_on') : t('cmd_react_off'));
             rebuildAgentWith(next ? { forceReAct: true } : {});
             return true;
         }
@@ -355,54 +366,54 @@ export function handleSlashCommand(trimmed, ctx) {
             const next = !advisorEnabled;
             setAdvisorEnabled(next);
             persistFlag('advisor', next);
-            say(`🧭 Advisor: ${next ? 'ON' : 'OFF'} (la lógica completa requiere segundo modelo configurado)`);
+            say(next ? t('cmd_advisor_on') : t('cmd_advisor_off'));
             return true;
         }
 
         case '/logout': {
-            const provider = cfg.current.provider || 'desconocido';
+            const provider = cfg.current.provider || 'unknown';
             cfg.current = { ...cfg.current, apiKey: null };
             persistFlag('apiKey', null);
-            say(`🔒 API key borrada para ${provider}. Usa /provider para reconfigurar.`);
+            say(t('cmd_logout_ok', { provider }));
             return true;
         }
 
         case '/add-dir': {
-            if (!args) { say('Uso: /add-dir <ruta>'); return true; }
+            if (!args) { say(t('cmd_add_dir_usage')); return true; }
             const target     = path.resolve(args);
             const trustedDirs = cfg.current.trustedDirs || [];
             if (trustedDirs.includes(target)) {
-                say(`✓ ${target} ya estaba en la lista de confianza.`);
+                say(t('cmd_add_dir_exists', { path: target }));
             } else {
                 trustedDirs.push(target);
                 cfg.current = { ...cfg.current, trustedDirs };
                 persistFlag('trustedDirs', trustedDirs);
-                say(`✅ Directorio añadido a workspace: ${target}\nDirs de confianza:\n  ${trustedDirs.join('\n  ')}`);
+                say(t('cmd_add_dir_ok', { path: target, dirs: trustedDirs.join('\n  ') }));
             }
             return true;
         }
 
         case '/copy': {
             const last = lastAssistantText();
-            if (!last) { say('⚠ No hay respuesta del asistente para copiar.'); return true; }
+            if (!last) { say(t('cmd_copy_none')); return true; }
             copyToClipboard(last).then(ok => {
                 say(ok
-                    ? `📋 Copiado al portapapeles (${last.length} chars).`
-                    : `⚠ No se encontró un cliente de portapapeles. Instala xclip / xsel / wl-copy / pbcopy / termux-clipboard-set.\n\n--- contenido ---\n${last}`);
+                    ? t('cmd_copy_ok', { count: last.length })
+                    : t('cmd_copy_error', { text: last }));
             });
             return true;
         }
 
         case '/diff': {
-            say('⏳ git diff HEAD…');
+            say(t('cmd_diff_starting'));
             runCommand('git', ['diff', 'HEAD']).then(({ ok, output }) => {
                 if (!ok && output.includes('not a git repository')) {
-                    say('⚠ Este directorio no es un repo git.');
+                    say(t('cmd_diff_error'));
                 } else {
                     const trimmedOut = output.length > 4000
-                        ? output.slice(0, 4000) + '\n…(truncado)'
+                        ? output.slice(0, 4000) + '\n…(truncated)'
                         : output;
-                    say(trimmedOut || '(sin cambios pendientes)');
+                    say(trimmedOut || t('cmd_diff_none'));
                 }
             });
             return true;
@@ -411,22 +422,22 @@ export function handleSlashCommand(trimmed, ctx) {
         case '/doctor': {
             const cfgNow = cfg.current || {};
             const lines  = [
-                '🩺 Diagnóstico AgentLag',
+                t('cmd_doctor_title'),
                 `  • Node ${process.version} · ${process.platform}/${process.arch}`,
-                `  • Versión: ${AGENTLAG_VERSION}`,
+                `  • ${t('label_version')}: ${AGENTLAG_VERSION}`,
                 `  • cwd: ${process.cwd()}`,
-                `  • Provider: ${cfgNow.provider || '(sin configurar)'}`,
-                `  • Modelo: ${cfgNow.model || '(sin configurar)'}`,
-                `  • API key guardada: ${cfgNow.apiKey ? 'sí' : 'no'}`,
+                `  • ${t('label_provider')}: ${cfgNow.provider || '(not configured)'}`,
+                `  • ${t('label_model')}: ${cfgNow.model || '(not configured)'}`,
+                `  • ${t('label_api_key_saved')}: ${cfgNow.apiKey ? t('label_yes') : t('label_no')}`,
                 `  • Effort: ${effortLevel}`,
-                `  • ReAct forzado: ${forceReAct ? 'sí' : 'no'}`,
-                `  • Tavily key: ${process.env.TAVILY_API_KEY ? 'sí' : 'no'}`,
-                `  • Mensajes en sesión: ${msgRef.current.length}`,
+                `  • ${t('label_force_react')}: ${forceReAct ? t('label_yes') : t('label_no')}`,
+                `  • Tavily key: ${process.env.TAVILY_API_KEY ? t('label_yes') : t('label_no')}`,
+                `  • ${t('label_messages')}: ${msgRef.current.length}`,
             ];
             say(lines.join('\n'));
             if (cfgNow.provider === 'ollama' || cfgNow.provider === 'huggingface') {
                 isOllamaRunning().then(running =>
-                    say(`  • Ollama corriendo: ${running ? 'sí' : 'no (ollama serve)'}`)
+                    say(t('cmd_doctor_ollama', { status: running ? t('label_yes') : `${t('label_no')} (ollama serve)` }))
                 );
             }
             return true;
@@ -438,28 +449,28 @@ export function handleSlashCommand(trimmed, ctx) {
             const estimatedSystemTokens = Math.ceil(systemPromptText.length / 4);
 
             say([
-                '📊 Contexto',
-                `  • Tokens acumulados (sesión): ${totalTokens}`,
-                `  • Mensajes en memoria: ${msgRef.current.length}`,
-                `  • Items en historial UI: ${historyRef.current.length}`,
-                `  • Conversación activa: ${currentConversationRef.current || '(latest)'}`,
-                `  • Estimación System Prompt: ~${estimatedSystemTokens} tokens`,
+                t('cmd_context_title'),
+                `  • ${t('label_tokens')}: ${totalTokens}`,
+                `  • ${t('label_memory_msgs')}: ${msgRef.current.length}`,
+                `  • ${t('label_items_hist')}: ${historyRef.current.length}`,
+                `  • ${t('label_active_conv')}: ${currentConversationRef.current || '(latest)'}`,
+                `  • ${t('label_estimated_tokens')}: ~${estimatedSystemTokens} tokens`,
                 "",
-                "Tip: Usa /compact si te estás quedando sin tokens en Groq."
+                t('cmd_context_tip')
             ].join('\n'));
             return true;
         }
 
         case '/compact': {
             const removed = msgRef.current.length;
-            if (removed === 0) { say('Ya estás en contexto vacío.'); return true; }
+            if (removed === 0) { say(t('cmd_compact_empty')); return true; }
             const summary = `[resumen automático: ${removed} mensajes previos en esta sesión]`;
             msgRef.current = [new HumanMessage(summary)];
             setStaticHistory(prev => {
                 const welcome = prev.find(i => i.type === 'welcome');
                 return [
                     ...(welcome ? [welcome] : []),
-                    { type: 'assistant', text: `🗜 Compactados ${removed} mensajes en un resumen.`, ephemeral: true },
+                    { type: 'assistant', text: t('cmd_compact_ok', { count: removed }), ephemeral: true },
                 ];
             });
             setTotalTokens(0);
@@ -480,31 +491,31 @@ export function handleSlashCommand(trimmed, ctx) {
             }
             try {
                 fs.writeFileSync(file, lines.join('\n'));
-                say(`✅ Exportado a ${file}`);
+                say(t('cmd_export_ok', { file }));
             } catch (e) {
-                say(`❌ Error exportando: ${e.message}`);
+                say(t('cmd_export_error', { error: e.message }));
             }
             return true;
         }
 
         case '/feedback':
-            say(`💬 Envía feedback / bugs:\n  https://github.com/andreslpxz/AgentLag_npm/issues/new\n\nIncluye versión (${AGENTLAG_VERSION}), provider y un resumen.`);
+            say(t('cmd_feedback_info', { version: AGENTLAG_VERSION }));
             return true;
 
         case '/keybindings':
             say([
-                '⌨  Atajos:',
-                '  Enter            Enviar',
-                '  Shift+Tab        Ciclar modo',
-                '  Esc              Limpiar input · doble Esc limpia historial',
-                '  Ctrl+C           Salir guardando sesión',
-                '  Ctrl+Z           Cancelar la operación en curso',
-                '  Ctrl+O           Toggle verbose',
-                '  Ctrl+T           Toggle tasks',
-                '  Alt+P            Cambiar de modelo',
-                '  !                Modo shell (al inicio del input)',
-                '  @                Mencionar archivo (al inicio del input)',
-                '  /                Menú de comandos (autocomplete)',
+                t('cmd_keybindings_title'),
+                `  Enter            ${t('kb_enter')}`,
+                `  Shift+Tab        ${t('kb_shift_tab')}`,
+                `  Esc              ${t('kb_esc')}`,
+                `  Ctrl+C           ${t('kb_ctrl_c')}`,
+                `  Ctrl+Z           ${t('kb_ctrl_z')}`,
+                `  Ctrl+O           ${t('kb_ctrl_o')}`,
+                `  Ctrl+T           ${t('kb_ctrl_t')}`,
+                `  Alt+P            ${t('kb_alt_p')}`,
+                `  !                ${t('kb_shell')}`,
+                `  @                ${t('kb_at')}`,
+                `  /                ${t('kb_slash')}`,
             ].join('\n'));
             return true;
 
@@ -513,9 +524,9 @@ export function handleSlashCommand(trimmed, ctx) {
             try { data = JSON.parse(fs.readFileSync(HOOKS_FILE, 'utf8')); } catch {}
             const entries = Object.entries(data);
             if (entries.length === 0) {
-                say(`🪝 No hay hooks configurados.\nEdita ${HOOKS_FILE} para añadir, ej:\n{\n  "PreToolUse":  ["echo about to run a tool"],\n  "PostToolUse": ["echo finished"]\n}`);
+                say(t('cmd_hooks_none', { file: HOOKS_FILE }));
             } else {
-                const lines = ['🪝 Hooks configurados:'];
+                const lines = [t('cmd_hooks_title')];
                 for (const [event, cmds] of entries)
                     lines.push(`  • ${event}: ${(Array.isArray(cmds) ? cmds : [cmds]).join(' ; ')}`);
                 say(lines.join('\n'));
@@ -528,15 +539,15 @@ export function handleSlashCommand(trimmed, ctx) {
             let entries = [];
             try { entries = fs.readdirSync(AGENTS_DIR).filter(f => f.endsWith('.json')); } catch {}
             if (entries.length === 0) {
-                say(`🤖 No hay subagentes definidos.\nCrea archivos en ${AGENTS_DIR}/<nombre>.json con { "description": "...", "systemPrompt": "..." }`);
+                say(t('cmd_agents_none', { dir: AGENTS_DIR }));
             } else {
-                const lines = ['🤖 Subagentes:'];
+                const lines = [t('cmd_agents_title')];
                 for (const f of entries) {
                     try {
                         const def = JSON.parse(fs.readFileSync(path.join(AGENTS_DIR, f), 'utf8'));
-                        lines.push(`  • ${path.basename(f, '.json')} — ${def.description || '(sin descripción)'}`);
+                        lines.push(`  • ${path.basename(f, '.json')} — ${def.description || '(no description)'}`);
                     } catch {
-                        lines.push(`  • ${path.basename(f, '.json')} — (archivo inválido)`);
+                        lines.push(`  • ${path.basename(f, '.json')} — (invalid file)`);
                     }
                 }
                 say(lines.join('\n'));
@@ -547,23 +558,23 @@ export function handleSlashCommand(trimmed, ctx) {
         case '/ide': {
             const term  = process.env.TERM_PROGRAM || process.env.TERM || 'unknown';
             const inIDE = !!(process.env.VSCODE_INJECTION || process.env.CURSOR_TRACE_ID || process.env.JETBRAINS_IDE);
-            say(`💻 IDE/terminal: ${term}\n  • Detectado dentro de IDE: ${inIDE ? 'sí' : 'no'}\n  • La integración profunda con IDEs aún no está implementada.`);
+            say(t('cmd_ide_info', { term, inIDE: inIDE ? 'yes' : 'no' }));
             return true;
         }
 
         case '/consolidate': {
             if (!historyRef.current.length) {
-                say('⚠️ No hay mensajes en la sesión actual para consolidar.');
+                say(t('cmd_consolidate_none'));
                 return true;
             }
-            say('🧠 Consolidando historial en Knowledge Graph L3 (Kuzu)...');
+            say(t('cmd_consolidate_starting'));
             (async () => {
                 try {
                     const ag  = await buildAgent();
                     const res = await consolidateHistory(historyRef.current, ag.llm);
                     say(res);
                 } catch (e) {
-                    say(`❌ Error en consolidación: ${e.message}`);
+                    say(t('cmd_consolidate_error', { error: e.message }));
                 }
             })();
             return true;
@@ -574,9 +585,9 @@ export function handleSlashCommand(trimmed, ctx) {
             try { content = fs.readFileSync(MEMORY_FILE, 'utf8'); } catch {}
             if (!args) {
                 if (!content.trim())
-                    say(`🧠 Memoria vacía. Crea/edita ${MEMORY_FILE} o usa:\n  /memory add <nota>     añade una línea`);
+                    say(t('cmd_memory_empty', { file: MEMORY_FILE }));
                 else
-                    say(`🧠 Memoria (${MEMORY_FILE}):\n\n${content.trim()}`);
+                    say(t('cmd_memory_title', { file: MEMORY_FILE }) + `\n\n${content.trim()}`);
                 return true;
             }
             const sub  = rest[0]?.toLowerCase();
@@ -584,20 +595,20 @@ export function handleSlashCommand(trimmed, ctx) {
             if (sub === 'add' && note) {
                 try { /* ensureDir ya garantiza CONFIG_DIR */ } catch {}
                 fs.appendFileSync(MEMORY_FILE, `- ${note}\n`);
-                say(`✅ Añadido a memoria: ${note}`);
+                say(t('cmd_memory_added', { note }));
             } else if (sub === 'clear') {
                 try { fs.writeFileSync(MEMORY_FILE, ''); } catch {}
-                say('🧹 Memoria limpiada.');
+                say(t('cmd_memory_cleared'));
             } else {
-                say('Uso: /memory  ·  /memory add <nota>  ·  /memory clear');
+                say(t('cmd_memory_usage'));
             }
             return true;
         }
 
         case '/sessions': {
             const list = listConversations();
-            if (list.length === 0) say('Sin sesiones guardadas en este proyecto.');
-            else say(`💾 Sesiones:\n  ${list.join('\n  ')}\n\nUsa /resume <nombre> o /import <nombre>.`);
+            if (list.length === 0) say(t('cmd_sessions_empty'));
+            else say(t('cmd_sessions_title') + `\n  ${list.join('\n  ')}\n\n${t('cmd_sessions_usage')}`);
             return true;
         }
 
@@ -607,22 +618,22 @@ export function handleSlashCommand(trimmed, ctx) {
             const tail = subArgs.join(' ').trim();
 
             if (sub === 'list') {
-                say(`🧩 Skills instaladas:\n${formatSkillsIndex(process.cwd())}`);
+                say(t('cmd_skills_list_title') + `\n${formatSkillsIndex(process.cwd())}`);
                 return true;
             }
             if (sub === 'read') {
-                if (!tail) { say('Uso: /skills read <nombre>\nEjemplo: /skills read find-skills'); return true; }
+                if (!tail) { say(t('cmd_skills_read_usage')); return true; }
                 const skill = readSkill(tail, process.cwd());
-                if (!skill) say(`⚠ No encontré la skill "${tail}". Usa /skills list.`);
-                else say(`📘 ${skill.name} (${skill.scope})\n${skill.path}\n\n${skill.content}`);
+                if (!skill) say(t('cmd_skills_not_found', { name: tail }));
+                else say(`${t('cmd_skills_read_header', { name: skill.name, scope: skill.scope })}\n${skill.path}\n\n${skill.content}`);
                 return true;
             }
             if (sub === 'find' || sub === 'search') {
-                if (!tail) { say('Uso: /skills find <consulta>\nEjemplo: /skills find image optimization'); return true; }
-                say(`⏳ Buscando skills: ${tail}`, true);
+                if (!tail) { say(t('cmd_skills_search_usage')); return true; }
+                say(t('cmd_skills_searching', { query: tail }), true);
                 runCommand('npx', ['-y', 'skills', 'find', tail]).then(({ code, output }) => {
-                    const clean = output.trim() || '(sin salida)';
-                    say(code === 0 ? clean : `❌ Error buscando skills:\n${clean}`);
+                    const clean = output.trim() || '(no output)';
+                    say(code === 0 ? clean : t('cmd_skills_search_error', { error: clean }));
                 });
                 return true;
             }
@@ -630,35 +641,28 @@ export function handleSlashCommand(trimmed, ctx) {
                 const parsedArgs = splitCommandArgs(subArgs.join(' '));
                 const source     = parsedArgs[0];
                 if (!source) {
-                    say('Uso: /skills add <source> [--skill nombre] [--global] [--copy]\nEjemplo: /skills add https://github.com/vercel-labs/skills --skill find-skills');
+                    say(t('cmd_skills_install_usage'));
                     return true;
                 }
                 const extra = parsedArgs.slice(1);
-                say(`⏳ Instalando skill desde ${source}…`, true);
+                say(t('cmd_skills_installing', { source }), true);
                 runCommand('npx', ['-y', 'skills', 'add', source, '-y', ...extra]).then(({ code, output }) => {
-                    const clean = output.trim() || '(sin salida)';
-                    say(code === 0 ? clean : `❌ Error instalando skill:\n${clean}`);
+                    const clean = output.trim() || '(no output)';
+                    say(code === 0 ? clean : t('cmd_skills_install_error', { error: clean }));
                     if (code === 0) { clearSkillsCache(); rebuildAgentWith(); }
                 });
                 return true;
             }
             if (sub === 'check' || sub === 'update') {
-                say(`⏳ Ejecutando skills ${sub}…`, true);
+                say(t('cmd_skills_updating', { sub }), true);
                 runCommand('npx', ['-y', 'skills', sub, '-y']).then(({ code, output }) => {
                     const clean = output.trim() || '(sin salida)';
-                    say(code === 0 ? clean : `❌ Error en skills ${sub}:\n${clean}`);
+                    say(code === 0 ? clean : t('cmd_skills_update_error', { sub, error: clean }));
                     if (code === 0) { clearSkillsCache(); rebuildAgentWith(); }
                 });
                 return true;
             }
-            say([
-                'Uso:',
-                '  /skills list',
-                '  /skills read <nombre>',
-                '  /skills find <consulta>',
-                '  /skills add <source> [--skill nombre] [--global] [--copy]',
-                '  /skills update',
-            ].join('\n'));
+            say(t('cmd_skills_usage_full'));
             return true;
         }
 
@@ -675,23 +679,23 @@ export function handleSlashCommand(trimmed, ctx) {
                 setStaticHistory([
                     ...(welcome ? [welcome] : []),
                     ...s.history,
-                    { type: 'assistant', text: `Historial importado: ${s.name || args || 'latest'}.`, ephemeral: true },
+                    { type: 'assistant', text: t('cmd_resume_ok', { name: s.name || args || 'latest' }), ephemeral: true },
                 ]);
             } else {
                 const available = listConversations();
-                const suffix    = available.length ? `\nDisponibles: ${available.join(', ')}` : '';
-                say(`No hay historial para importar${args ? `: ${args}` : ' en este proyecto'}.${suffix}`, true);
+                const suffix    = available.length ? `\nAvailable: ${available.join(', ')}` : '';
+                say(t('cmd_resume_none', { args: args ? `: ${args}` : ' in this project', available: suffix }), true);
             }
             return true;
         }
 
         case '/rename': {
-            if (!args) { say('Uso: /rename <nuevo-nombre>'); return true; }
+            if (!args) { say(t('cmd_rename_usage')); return true; }
             const next = normalizeConversationName(args);
-            if (!next) { say('❌ Nombre inválido.'); return true; }
+            if (!next) { say(t('cmd_rename_error')); return true; }
             currentConversationRef.current = next;
             const saved = saveSession(historyRef.current, next);
-            say(`✅ Conversación renombrada a "${saved?.name || next}".`);
+            say(t('cmd_rename_ok', { name: saved?.name || next }));
             return true;
         }
 
@@ -702,17 +706,17 @@ export function handleSlashCommand(trimmed, ctx) {
             const saved = saveSession(historyRef.current, branchName);
             if (saved?.name) {
                 currentConversationRef.current = saved.name;
-                say(`🌿 Branch creado: ${saved.name}. La conversación actual ahora se guarda con ese nombre.`);
+                say(t('cmd_branch_ok', { name: saved.name }));
             } else {
-                say('⚠ No hay nada que ramificar todavía.');
+                say(t('cmd_branch_error'));
             }
             return true;
         }
 
         case '/btw':
             say(args
-                ? `📝 Nota lateral: ${args}`
-                : '📝 Modo nota / side question. Escribe la pregunta paralela como un mensaje normal — no romperá el flujo principal.');
+                ? t('cmd_btw_note', { args })
+                : t('cmd_btw_info'));
             return true;
 
         // ─── /deepsearch <tema> ───────────────────────────────────────────────
@@ -736,12 +740,12 @@ export function handleSlashCommand(trimmed, ctx) {
         // ─────────────────────────────────────────────────────────────────────
         case '/deepsearch': {
             if (!args) {
-                say('Uso: /deepsearch <tema>\nEjemplo: /deepsearch inteligencia artificial\n\nRealiza una investigación profunda y guarda los resultados en un archivo .md');
+                say(t('cmd_deepsearch_usage'));
                 return true;
             }
 
             const topic = args.trim();
-            say(`🔍 Iniciando Deep Search sobre: "${topic.slice(0, 50)}${topic.length > 50 ? '...' : ''}"\nEsto puede tardar unos segundos...`);
+            say(t('cmd_deepsearch_starting', { topic: topic.slice(0, 50) + (topic.length > 50 ? '...' : '') }));
 
             (async () => {
                 let subQuestions = [];
@@ -780,7 +784,7 @@ export function handleSlashCommand(trimmed, ctx) {
                     });
                 };
 
-                updateStatus(`🔍 Investigando: ○ ○ ○ ○ ○`);
+                updateStatus(t('cmd_deepsearch_investigating', { dots: '○ ○ ○ ○ ○' }));
 
                 for (let i = 0; i < subQuestions.length; i++) {
                     const question = subQuestions[i];
@@ -788,11 +792,11 @@ export function handleSlashCommand(trimmed, ctx) {
                         const result = await webSearch.invoke({ query: question });
                         results.push({ question, content: result });
                     } catch (e) {
-                        results.push({ question, content: `⚠️ Error al buscar: ${e.message}` });
+                        results.push({ question, content: `⚠️ Error: ${e.message}` });
                         errorCount++;
                     }
                     const dots = '● '.repeat(i + 1) + '○ '.repeat(subQuestions.length - (i + 1));
-                    updateStatus(`🔍 Investigando: ${dots.trim()}`);
+                    updateStatus(t('cmd_deepsearch_investigating', { dots: dots.trim() }));
                 }
 
                 // Construir el documento Markdown
@@ -836,7 +840,7 @@ export function handleSlashCommand(trimmed, ctx) {
                         `📊 ${subQuestions.length} subtemas investigados`,
                     ].join('\n'));
                 } catch (e) {
-                    updateStatus(`❌ Deep Search completado pero falló al guardar: ${e.message}\n\nResultados:\n${doc.slice(0, 500)}...`);
+                    updateStatus(t('error_prefix', { error: `Deep Search completado pero falló al guardar: ${e.message}\n\nResultados:\n${doc.slice(0, 500)}...` }));
                 }
             })();
 
@@ -859,7 +863,7 @@ export function handleSlashCommand(trimmed, ctx) {
         case '/standup': {
             const history = historyRef.current;
             if (!history || history.length === 0) {
-                say('⚠️ No hay historial en esta sesión para generar un standup.');
+                say(t('cmd_standup_none'));
                 return true;
             }
 
@@ -913,16 +917,16 @@ export function handleSlashCommand(trimmed, ctx) {
                 fs.mkdirSync(outDir, { recursive: true });
                 fs.writeFileSync(outFile, doc, 'utf8');
                 say([
-                    '📋 **Standup generado:**',
+                    t('cmd_standup_ok'),
                     '',
-                    `✅ Tareas completadas detectadas: ${completed.split('\n').filter(l=>l.startsWith('-')).length}`,
-                    `🚧 Blockers: ${blockers.split('\n').filter(l=>l.startsWith('-')).length}`,
-                    `➡️ Próximos pasos: ${nextSteps.split('\n').filter(l=>l.startsWith('-')).length}`,
+                    t('cmd_standup_summary_completed', { count: completed.split('\n').filter(l=>l.startsWith('-')).length }),
+                    t('cmd_standup_summary_blockers', { count: blockers.split('\n').filter(l=>l.startsWith('-')).length }),
+                    t('cmd_standup_summary_next', { count: nextSteps.split('\n').filter(l=>l.startsWith('-')).length }),
                     '',
-                    `📄 Guardado en: ${outFile}`,
+                    t('standup_report', { file: outFile }),
                 ].join('\n'));
             } catch (e) {
-                say(`❌ Error guardando standup: ${e.message}\n\n${doc.slice(0, 800)}`);
+                say(t('error_prefix', { error: `${t('cmd_standup_error')}: ${e.message}\n\n${doc.slice(0, 800)}` }));
             }
             return true;
         }
@@ -937,7 +941,7 @@ export function handleSlashCommand(trimmed, ctx) {
         // ─────────────────────────────────────────────────────────────────────
         case '/review': {
             if (!args) {
-                say('Uso: /review <archivo>\nEjemplo: /review src/index.js\n\nHace un code review completo y guarda el reporte en .agentlag/reviews/');
+                say(t('cmd_review_usage'));
                 return true;
             }
 
@@ -946,11 +950,11 @@ export function handleSlashCommand(trimmed, ctx) {
             try {
                 fileContent = fs.readFileSync(filePath, 'utf8');
             } catch (e) {
-                say(`❌ No se pudo leer el archivo: ${filePath}\n${e.message}`);
+                say(t('cmd_review_error', { path: filePath, error: e.message }));
                 return true;
             }
 
-            say(`🔍 Analizando ${args.trim()}... (esto puede tardar unos segundos)`);
+            say(t('cmd_review_starting', { path: args.trim() }));
 
             const ext      = path.extname(filePath).replace('.', '') || 'txt';
             const lines    = fileContent.split('\n').length;
@@ -964,21 +968,21 @@ export function handleSlashCommand(trimmed, ctx) {
 
             // Detectar posibles problemas comunes
             if (/console\.log|print\(|debugger/g.test(fileContent))
-                issues.push('⚠️ **Debug statements** encontrados (`console.log`, `print`, `debugger`). Eliminar antes de producción.');
+                issues.push(t('review_issue_debug'));
             if (/TODO|FIXME|HACK|XXX/g.test(fileContent))
-                issues.push('📝 **TODOs/FIXMEs** pendientes en el código.');
+                issues.push(t('review_issue_todo'));
             if (/password|secret|api_key|apikey|token\s*=/gi.test(fileContent))
-                issues.push('🔴 **Posible secret hardcodeado** detectado. Mover a variables de entorno.');
+                issues.push(t('review_issue_secret'));
             if (/catch\s*\(\s*\)\s*\{?\s*\}|except\s*:\s*pass/g.test(fileContent))
-                issues.push('⚠️ **Catch/except vacío** detectado. Los errores se están silenciando.');
+                issues.push(t('review_issue_empty_catch'));
             if (lines > 500)
-                issues.push(`📏 **Archivo muy largo** (${lines} líneas). Considerar dividir en módulos más pequeños.`);
+                issues.push(t('review_issue_long_file', { lines }));
             if (/eval\s*\(|exec\s*\(/g.test(fileContent))
-                issues.push('🔴 **Uso de `eval`/`exec`** detectado. Riesgo de seguridad.');
+                issues.push(t('review_issue_eval'));
             if (/http:\/\//g.test(fileContent))
-                issues.push('⚠️ **URLs HTTP** (no HTTPS) detectadas.');
+                issues.push(t('review_issue_http'));
 
-            const issueBlock = issues.length > 0 ? issues.join('\n') : '✅ No se detectaron problemas automáticos evidentes.';
+            const issueBlock = issues.length > 0 ? issues.join('\n') : t('review_no_issues');
 
             // Métricas básicas
             const fnMatches   = fileContent.match(/function\s+\w+|=>\s*\{|def\s+\w+|func\s+\w+/g) || [];
@@ -1003,12 +1007,12 @@ export function handleSlashCommand(trimmed, ctx) {
                 '',
                 '## 📊 Métricas',
                 '',
-                `| Métrica | Valor |`,
+                `| ${t('review_metric')} | ${t('review_value')} |`,
                 `|---------|-------|`,
-                `| Líneas totales | ${lines} |`,
-                `| Funciones / métodos | ${fnMatches.length} |`,
-                `| Imports / dependencias | ${importLines.length} |`,
-                `| Líneas de comentario | ${commentLines} (${commentRatio}%) |`,
+                `| ${t('review_metric_lines')} | ${lines} |`,
+                `| ${t('review_metric_fns')} | ${fnMatches.length} |`,
+                `| ${t('review_metric_imports')} | ${importLines.length} |`,
+                `| ${t('review_metric_comments')} | ${commentLines} (${commentRatio}%) |`,
                 '',
                 '## 📦 Imports detectados',
                 '',
@@ -1028,14 +1032,14 @@ export function handleSlashCommand(trimmed, ctx) {
                 fs.mkdirSync(outDir, { recursive: true });
                 fs.writeFileSync(outFile, doc, 'utf8');
                 say([
-                    `✅ Code review completado: \`${path.basename(filePath)}\``,
+                    t('cmd_review_ok', { name: path.basename(filePath) }),
                     '',
                     issueBlock,
                     '',
-                    `📄 Reporte completo en: ${outFile}`,
+                    t('review_report', { file: outFile }),
                 ].join('\n'));
             } catch (e) {
-                say(`❌ Error guardando review: ${e.message}\n\n${issueBlock}`);
+                say(t('error_prefix', { error: `${e.message}\n\n${issueBlock}` }));
             }
             return true;
         }
@@ -1051,7 +1055,7 @@ export function handleSlashCommand(trimmed, ctx) {
         case '/changelog': {
             const limit   = parseInt(args) || 50;
             const outFile = path.join(process.cwd(), 'CHANGELOG.md');
-            say(`📝 Generando CHANGELOG con los últimos ${limit} commits...`);
+            say(t('cmd_changelog_starting', { limit }));
 
             let gitLog;
             try {
@@ -1060,12 +1064,12 @@ export function handleSlashCommand(trimmed, ctx) {
                     { cwd: process.cwd(), encoding: 'utf8', timeout: 15000 }
                 );
             } catch (e) {
-                say(`❌ Error leyendo git log: ${e.message}\nAsegúrate de estar en un repositorio git.`);
+                say(t('cmd_changelog_error', { error: e.message }));
                 return true;
             }
 
             if (!gitLog.trim()) {
-                say('⚠️ No se encontraron commits en este repositorio.');
+                say(t('cmd_changelog_none'));
                 return true;
             }
 
@@ -1087,7 +1091,20 @@ export function handleSlashCommand(trimmed, ctx) {
             }
 
             const typeEmoji = { feat:'✨', fix:'🐛', docs:'📝', style:'💄', refactor:'♻️', test:'✅', chore:'🔧', perf:'⚡', ci:'👷', build:'📦', revert:'⏪', other:'🔹' };
-            const typeLabel = { feat:'Features', fix:'Bug Fixes', docs:'Documentation', style:'Styles', refactor:'Refactoring', test:'Tests', chore:'Chores', perf:'Performance', ci:'CI', build:'Build', revert:'Reverts', other:'Other' };
+            const typeLabel = {
+                feat: t('changelog_feat'),
+                fix: t('changelog_fix'),
+                docs: t('changelog_docs'),
+                style: t('changelog_style'),
+                refactor: t('changelog_refactor'),
+                test: t('changelog_test'),
+                chore: t('changelog_chore'),
+                perf: t('changelog_perf'),
+                ci: t('changelog_ci'),
+                build: t('changelog_build'),
+                revert: t('changelog_revert'),
+                other: t('changelog_other')
+            };
 
             const sections = Object.entries(byDate).map(([date, cms]) => {
                 const byType = {};
@@ -1114,9 +1131,9 @@ export function handleSlashCommand(trimmed, ctx) {
 
             try {
                 fs.writeFileSync(outFile, doc, 'utf8');
-                say(`✅ CHANGELOG generado con ${commits.length} commits\n📄 Guardado en: ${outFile}`);
+                say(t('cmd_changelog_ok', { count: commits.length, file: outFile }));
             } catch (e) {
-                say(`❌ Error guardando CHANGELOG: ${e.message}`);
+                say(t('error_prefix', { error: e.message }));
             }
             return true;
         }
@@ -1131,7 +1148,7 @@ export function handleSlashCommand(trimmed, ctx) {
         // ─────────────────────────────────────────────────────────────────────
         case '/todo': {
             const scanDir = args ? path.resolve(process.cwd(), args.trim()) : process.cwd();
-            say(`🔍 Escaneando TODOs en: ${scanDir}`);
+            say(t('cmd_todo_starting', { path: scanDir }));
 
             let grepOutput;
             try {
@@ -1146,7 +1163,7 @@ export function handleSlashCommand(trimmed, ctx) {
             const lines = grepOutput.trim().split('\n').filter(Boolean);
 
             if (lines.length === 0) {
-                say('✅ No se encontraron TODOs, FIXMEs ni HARAKs en el proyecto. ¡Código limpio!');
+                say(t('cmd_todo_none'));
                 return true;
             }
 
@@ -1193,9 +1210,9 @@ export function handleSlashCommand(trimmed, ctx) {
                 fs.mkdirSync(outDir2, { recursive: true });
                 fs.writeFileSync(outFile2, doc, 'utf8');
                 const summary = Object.entries(byType).map(([t, e]) => `${typeEmoji2[t]||'🔹'} ${t}: ${e.length}`).join(' · ');
-                say(`✅ Encontrados ${items.length} items: ${summary}\n📄 Guardado en: ${outFile2}`);
+                say(t('cmd_todo_ok', { count: items.length, summary, file: outFile2 }));
             } catch (e) {
-                say(`❌ Error guardando TODO.md: ${e.message}`);
+                say(t('error_prefix', { error: e.message }));
             }
             return true;
         }
@@ -1208,7 +1225,7 @@ export function handleSlashCommand(trimmed, ctx) {
         //   /audit
         // ─────────────────────────────────────────────────────────────────────
         case '/audit': {
-            say('🔐 Iniciando auditoría de seguridad...');
+            say(t('cmd_audit_starting'));
             const outDir3  = path.join(process.cwd(), '.agentlag', 'audits');
             const outFile3 = path.join(outDir3, `audit-${Date.now()}.md`);
             const dateStr3 = new Date().toLocaleDateString('es-ES', { year: 'numeric', month: 'long', day: 'numeric' });
@@ -1231,16 +1248,16 @@ export function handleSlashCommand(trimmed, ctx) {
             sections3.push(`## 📦 Dependencias (npm audit)\n\n${npmAudit}`);
 
             // 2. Buscar secrets expuestos
-            say('  🔍 Buscando secrets expuestos...');
+            say(t('audit_searching_secrets'));
             let secretsFound = [];
             try {
                 const secretPatterns = [
-                    { label: 'API Key hardcodeada', pattern: '(api_key|apikey|APIKEY)\\s*=\\s*["\'][^"\']{8,}' },
-                    { label: 'Password hardcodeada', pattern: '(password|passwd|pwd)\\s*=\\s*["\'][^"\']{4,}' },
-                    { label: 'Token hardcodeado',    pattern: '(token|TOKEN)\\s*=\\s*["\'][^"\']{8,}' },
-                    { label: 'Secret hardcodeado',   pattern: '(secret|SECRET)\\s*=\\s*["\'][^"\']{8,}' },
-                    { label: 'AWS Key',              pattern: 'AKIA[0-9A-Z]{16}' },
-                    { label: 'Private Key',          pattern: 'BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY' },
+                    { label: t('audit_secret_apikey'), pattern: '(api_key|apikey|APIKEY)\\s*=\\s*["\'][^"\']{8,}' },
+                    { label: t('audit_secret_password'), pattern: '(password|passwd|pwd)\\s*=\\s*["\'][^"\']{4,}' },
+                    { label: t('audit_secret_token'),    pattern: '(token|TOKEN)\\s*=\\s*["\'][^"\']{8,}' },
+                    { label: t('audit_secret_secret'),   pattern: '(secret|SECRET)\\s*=\\s*["\'][^"\']{8,}' },
+                    { label: t('audit_secret_aws'),              pattern: 'AKIA[0-9A-Z]{16}' },
+                    { label: t('audit_secret_privkey'),          pattern: 'BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY' },
                 ];
                 for (const { label, pattern } of secretPatterns) {
                     try {
@@ -1258,15 +1275,15 @@ export function handleSlashCommand(trimmed, ctx) {
             sections3.push(`## 🔑 Secrets expuestos\n\n${secretsFound.length > 0 ? secretsFound.join('\n\n') : '✅ No se detectaron secrets hardcodeados.'}`);
 
             // 3. Patrones peligrosos en código
-            say('  🔍 Buscando patrones peligrosos...');
+            say(t('audit_searching_patterns'));
             const dangerPatterns = [];
             try {
                 const dangerous = [
-                    { label: 'eval()',           pattern: 'eval\\s*\\(' },
-                    { label: 'exec() dinámico',  pattern: 'exec\\s*\\(' },
-                    { label: 'innerHTML directo',pattern: '\\.innerHTML\\s*=' },
-                    { label: 'HTTP sin HTTPS',   pattern: 'http://' },
-                    { label: 'Catch vacío',      pattern: 'catch\\s*\\(.*\\)\\s*\\{\\s*\\}' },
+                    { label: t('audit_danger_eval'),           pattern: 'eval\\s*\\(' },
+                    { label: t('audit_danger_exec'),  pattern: 'exec\\s*\\(' },
+                    { label: t('audit_danger_innerhtml'),pattern: '\\.innerHTML\\s*=' },
+                    { label: t('audit_danger_http'),   pattern: 'http://' },
+                    { label: t('audit_danger_catch'),      pattern: 'catch\\s*\\(.*\\)\\s*\\{\\s*\\}' },
                 ];
                 for (const { label, pattern } of dangerous) {
                     try {
@@ -1316,14 +1333,14 @@ export function handleSlashCommand(trimmed, ctx) {
                 fs.writeFileSync(outFile3, doc, 'utf8');
                 const totalIssues = secretsFound.length + dangerPatterns.length;
                 say([
-                    `🔐 Auditoría completada`,
-                    `🔑 Secrets detectados: ${secretsFound.length}`,
-                    `⚠️ Patrones peligrosos: ${dangerPatterns.length}`,
-                    totalIssues === 0 ? '✅ Sin problemas críticos detectados' : `🔴 ${totalIssues} problema(s) requieren atención`,
-                    `📄 Reporte completo: ${outFile3}`,
+                    t('cmd_audit_ok'),
+                    t('audit_summary_secrets', { count: secretsFound.length }),
+                    t('audit_summary_patterns', { count: dangerPatterns.length }),
+                    totalIssues === 0 ? t('audit_summary_no_issues') : t('audit_summary_issues', { count: totalIssues }),
+                    t('audit_report', { file: outFile3 }),
                 ].join('\n'));
             } catch (e) {
-                say(`❌ Error guardando auditoría: ${e.message}`);
+                say(t('error_prefix', { error: e.message }));
             }
             return true;
         }
@@ -1338,7 +1355,7 @@ export function handleSlashCommand(trimmed, ctx) {
         // ─────────────────────────────────────────────────────────────────────
         case '/explain': {
             if (!args) {
-                say('Uso: /explain <archivo>\nEjemplo: /explain src/utils.js\n\nGenera documentación técnica del archivo y la guarda en .agentlag/docs/');
+                say(t('cmd_explain_usage'));
                 return true;
             }
 
@@ -1347,11 +1364,11 @@ export function handleSlashCommand(trimmed, ctx) {
             try {
                 fileContent4 = fs.readFileSync(filePath4, 'utf8');
             } catch (e) {
-                say(`❌ No se pudo leer: ${filePath4}\n${e.message}`);
+                say(t('cmd_explain_error', { path: filePath4, error: e.message }));
                 return true;
             }
 
-            say(`📖 Generando documentación para: ${args.trim()}`);
+            say(t('cmd_explain_starting', { path: args.trim() }));
 
             const ext4     = path.extname(filePath4).replace('.', '') || 'txt';
             const lines4   = fileContent4.split('\n');
@@ -1390,8 +1407,7 @@ export function handleSlashCommand(trimmed, ctx) {
                 '',
                 '## 📋 Resumen',
                 '',
-                `Este archivo contiene **${functions.length} función(es)** y **${classes4.length} clase(s)**. `,
-                `Tiene **${imports4.length} import(s)** y **${exports4.length} export(s)**.`,
+                t('explain_summary', { functions: functions.length, classes: classes4.length, imports: imports4.length, exports: exports4.length }),
                 '',
                 '## 📦 Dependencias (imports)',
                 '',
@@ -1418,12 +1434,12 @@ export function handleSlashCommand(trimmed, ctx) {
                 fs.mkdirSync(outDir4, { recursive: true });
                 fs.writeFileSync(outFile4, doc, 'utf8');
                 say([
-                    `✅ Documentación generada para \`${path.basename(filePath4)}\``,
-                    `📊 ${functions.length} funciones · ${classes4.length} clases · ${imports4.length} imports`,
-                    `📄 Guardado en: ${outFile4}`,
+                    t('cmd_explain_ok', { name: path.basename(filePath4) }),
+                    t('explain_metrics', { functions: functions.length, classes: classes4.length, imports: imports4.length }),
+                    t('explain_report', { file: outFile4 }),
                 ].join('\n'));
             } catch (e) {
-                say(`❌ Error guardando documentación: ${e.message}`);
+                say(t('error_prefix', { error: e.message }));
             }
             return true;
         }
@@ -1440,7 +1456,7 @@ export function handleSlashCommand(trimmed, ctx) {
             const scanDir2  = args ? path.resolve(process.cwd(), args.trim()) : process.cwd();
             const outDir5   = path.join(process.cwd(), '.agentlag');
             const outFile5  = path.join(outDir5, 'ARCHITECTURE.md');
-            say(`🗺️ Analizando arquitectura en: ${scanDir2}`);
+            say(t('cmd_diagram_starting', { path: scanDir2 }));
 
 
             // Listar archivos JS/TS principales (excluir node_modules, dist, etc.)
@@ -1454,7 +1470,7 @@ export function handleSlashCommand(trimmed, ctx) {
             } catch {}
 
             if (fileList.length === 0) {
-                say('⚠️ No se encontraron archivos de código en el proyecto.');
+                say(t('cmd_diagram_none'));
                 return true;
             }
 
@@ -1523,14 +1539,14 @@ export function handleSlashCommand(trimmed, ctx) {
                 fs.mkdirSync(outDir5, { recursive: true });
                 fs.writeFileSync(outFile5, doc, 'utf8');
                 say([
-                    `✅ Diagrama generado`,
-                    `📊 ${fileList.length} archivos · ${edges.length} relaciones`,
-                    `📄 Guardado en: ${outFile5}`,
-                    ``,
-                    `Abre el archivo en un visor Markdown con soporte Mermaid (VSCode, GitHub, Obsidian).`,
+                    t('cmd_diagram_ok'),
+                    t('diagram_metrics', { files: fileList.length, edges: edges.length }),
+                    t('diagram_report', { file: outFile5 }),
+                    '',
+                    t('cmd_diagram_tip'),
                 ].join('\n'));
             } catch (e) {
-                say(`❌ Error guardando diagrama: ${e.message}`);
+                say(t('error_prefix', { error: e.message }));
             }
             return true;
         }
@@ -1545,12 +1561,12 @@ export function handleSlashCommand(trimmed, ctx) {
         // ─────────────────────────────────────────────────────────────────────
         case '/task': {
             if (!args) {
-                say('Uso: /task <descripción de la tarea>\nEjemplo: /task refactorizar el módulo de autenticación\n\nDivide la tarea en subtareas y las delega a subagentes en paralelo.');
+                say(t('cmd_task_usage'));
                 return true;
             }
 
             const taskDesc = args.trim();
-            say(`🤖 Planificando tarea: "${taskDesc}"\nGenerando plan de subtareas...`);
+            say(t('cmd_task_starting', { topic: taskDesc }));
 
             // Generar subtareas basadas en el tipo de tarea detectado
             let subtasks = [];
@@ -1588,16 +1604,17 @@ export function handleSlashCommand(trimmed, ctx) {
                 ];
             }
 
-            say(`📋 Plan generado con ${subtasks.length} subtareas:\n${subtasks.map((s,i)=>`  ${i+1}. [${s.name}] ${s.task.slice(0,80)}...`).join('\n')}\n\nDelegando a subagentes...`);
+            const subPlan = subtasks.map((s,i)=>`  ${i+1}. [${s.name}] ${s.task.slice(0,80)}...`).join('\n');
+            say(t('cmd_task_plan', { count: subtasks.length, plan: subPlan }));
 
             // Agregar a historial para que el agente lo procese
-            const delegationMsg = `Por favor ejecuta esta tarea delegando a subagentes en paralelo usando la herramienta delegate_to_subagents:\n\nTarea principal: ${taskDesc}\n\nDelegaciones:\n${JSON.stringify(subtasks, null, 2)}`;
+            const delegationMsg = `Please execute this task by delegating to subagents in parallel using the delegate_to_subagents tool:\n\nMain task: ${taskDesc}\n\nDelegations:\n${JSON.stringify(subtasks, null, 2)}`;
 
             if (msgRef?.current !== undefined) {
                 msgRef.current = delegationMsg;
-                say('✅ Tarea enviada al agente para delegación paralela. El agente procesará las subtareas ahora.');
+                say(t('cmd_task_delegated'));
             } else {
-                say(`✅ Plan de tarea listo. Ejecuta esto en el chat:\n\n${delegationMsg}`);
+                say(t('cmd_task_chat_plan', { msg: delegationMsg }));
             }
             return true;
         }
@@ -1615,7 +1632,7 @@ export function handleSlashCommand(trimmed, ctx) {
         // ─────────────────────────────────────────────────────────────────────
         case '/draft': {
             if (!args) {
-                say('Uso: /draft <tipo> [descripción]\nTipos: pr · email · issue · commit · release\n\nEjemplos:\n  /draft pr\n  /draft email solicitud de vacaciones\n  /draft issue bug en el login\n  /draft commit');
+                say(t('cmd_draft_usage'));
                 return true;
             }
 
@@ -1740,7 +1757,7 @@ export function handleSlashCommand(trimmed, ctx) {
                 ].join('\n');
 
             } else {
-                say(`❌ Tipo desconocido: "${type}"\nTipos disponibles: pr · email · issue · commit · release`);
+                say(t('cmd_draft_error', { type }));
                 return true;
             }
 
@@ -1750,9 +1767,9 @@ export function handleSlashCommand(trimmed, ctx) {
             try {
                 fs.mkdirSync(outDir6, { recursive: true });
                 fs.writeFileSync(outFile6, draft, 'utf8');
-                say(`✅ Borrador de ${type} generado:\n\n${draft}\n\n📄 Guardado en: ${outFile6}`);
+                say(t('cmd_draft_ok', { type, draft, file: outFile6 }));
             } catch {
-                say(`✅ Borrador de ${type}:\n\n${draft}`);
+                say(t('cmd_draft_chat_ok', { type, draft }));
             }
             return true;
         }
@@ -1768,17 +1785,17 @@ export function handleSlashCommand(trimmed, ctx) {
         case '/compare': {
             const parts = args?.trim().split(/\s+/);
             if (!parts || parts.length < 2) {
-                say('Uso: /compare <archivo1> <archivo2>\nEjemplo: /compare src/old.js src/new.js');
+                say(t('cmd_compare_usage'));
                 return true;
             }
 
             const [file1Path, file2Path] = parts.map(p => path.resolve(process.cwd(), p));
             let content1, content2;
 
-            try { content1 = fs.readFileSync(file1Path, 'utf8'); } catch (e) { say(`❌ No se pudo leer: ${file1Path}`); return true; }
-            try { content2 = fs.readFileSync(file2Path, 'utf8'); } catch (e) { say(`❌ No se pudo leer: ${file2Path}`); return true; }
+            try { content1 = fs.readFileSync(file1Path, 'utf8'); } catch (e) { say(t('cmd_compare_error', { path: file1Path })); return true; }
+            try { content2 = fs.readFileSync(file2Path, 'utf8'); } catch (e) { say(t('cmd_compare_error', { path: file2Path })); return true; }
 
-            say(`🔄 Comparando ${path.basename(file1Path)} ↔ ${path.basename(file2Path)}...`);
+            say(t('cmd_compare_starting', { name1: path.basename(file1Path), name2: path.basename(file2Path) }));
 
             // Extraer funciones de cada archivo
             const extractFns = (content) => {
@@ -1845,14 +1862,14 @@ export function handleSlashCommand(trimmed, ctx) {
                 fs.mkdirSync(outDir7, { recursive: true });
                 fs.writeFileSync(outFile7, doc, 'utf8');
                 say([
-                    `✅ Comparación completada`,
-                    `📊 Líneas: ${lines1} → ${lines2} (${diffSign})`,
-                    `✨ Funciones añadidas: ${addedFns.length} | 🗑️ Eliminadas: ${removedFns.length}`,
-                    `📦 Imports añadidos: ${addedImps.length} | Eliminados: ${removedImps.length}`,
-                    `📄 Reporte: ${outFile7}`,
+                    t('cmd_compare_ok'),
+                    t('compare_metrics', { lines1, lines2, diff: diffSign }),
+                    t('compare_summary', { addedFns: addedFns.length, removedFns: removedFns.length }),
+                    t('compare_imports', { addedImps: addedImps.length, removedImps: removedImps.length }),
+                    t('compare_report', { file: outFile7 }),
                 ].join('\n'));
             } catch (e) {
-                say(`❌ Error guardando comparación: ${e.message}`);
+                say(t('error_prefix', { error: e.message }));
             }
             return true;
         }
