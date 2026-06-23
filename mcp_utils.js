@@ -1,5 +1,7 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
+import { URL } from "url";
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
 import fs from "fs";
@@ -13,13 +15,30 @@ const MCP_CONFIG_PATH = path.join(CONFIG_DIR, "mcp.json");
  * Carga la configuración de MCP desde ~/.agentlag/mcp.json
  */
 export function loadMcpConfig() {
+    const config = { mcpServers: {} };
+
+    // User config
     try {
-        if (!fs.existsSync(MCP_CONFIG_PATH)) return { mcpServers: {} };
-        return JSON.parse(fs.readFileSync(MCP_CONFIG_PATH, "utf8"));
+        if (fs.existsSync(MCP_CONFIG_PATH)) {
+            const userConfig = JSON.parse(fs.readFileSync(MCP_CONFIG_PATH, "utf8"));
+            Object.assign(config.mcpServers, userConfig.mcpServers || {});
+        }
     } catch (error) {
-        console.error("❌ Error al cargar mcp.json:", error.message);
-        return { mcpServers: {} };
+        console.error("❌ Error al cargar ~/.agentlag/mcp.json:", error.message);
     }
+
+    // Project config
+    const projectMcpPath = path.join(process.cwd(), ".agentlag", "mcp.json");
+    try {
+        if (fs.existsSync(projectMcpPath)) {
+            const projectConfig = JSON.parse(fs.readFileSync(projectMcpPath, "utf8"));
+            Object.assign(config.mcpServers, projectConfig.mcpServers || {});
+        }
+    } catch (error) {
+        console.error("❌ Error al cargar ./.agentlag/mcp.json:", error.message);
+    }
+
+    return config;
 }
 
 /**
@@ -30,11 +49,16 @@ async function getToolsFromServers(mcpServers) {
 
     for (const [name, config] of Object.entries(mcpServers)) {
         try {
-            const transport = new StdioClientTransport({
-                command: config.command,
-                args: config.args || [],
-                env: { ...process.env, ...(config.env || {}) },
-            });
+            let transport;
+            if (config.type === 'http' || config.url) {
+                transport = new SSEClientTransport(new URL(config.url));
+            } else {
+                transport = new StdioClientTransport({
+                    command: config.command,
+                    args: config.args || [],
+                    env: { ...process.env, ...(config.env || {}) },
+                });
+            }
 
             const client = new Client(
                 { name: "agentlag-client", version: "1.0.0" },

@@ -7,7 +7,6 @@ import fs from 'fs';
 import path from 'path';
 import os from 'os';
 import { Scheduler } from './scheduler.js';
-import { getExecutionLogs } from './bot.js';
 
 const app = new Hono();
 const CONFIG_DIR = path.join(os.homedir(), '.agentlag');
@@ -91,8 +90,11 @@ app.get('/api/schedules', (c) => {
 });
 
 app.get('/api/logs/scheduler', (c) => {
-    const logs = getExecutionLogs();
-    return c.json(logs);
+    const EXECUTION_LOGS_FILE = path.join(process.cwd(), 'scheduler_logs.json');
+    if (fs.existsSync(EXECUTION_LOGS_FILE)) {
+        return c.json(JSON.parse(fs.readFileSync(EXECUTION_LOGS_FILE, 'utf8')));
+    }
+    return c.json([]);
 });
 
 app.delete('/api/schedules/:id', (c) => {

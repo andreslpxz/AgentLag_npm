@@ -2,6 +2,14 @@
 // Definición de proveedores LLM y sus modelos sugeridos.
 
 export const PROVIDERS = [
+        { id: 'google',      label: 'Google Gemini',  desc: 'Gemini 1.5 Pro / Flash' },
+    { id: 'cohere',      label: 'Cohere',         desc: 'Command R+, Command R' },
+    { id: 'grok',        label: 'xAI (Grok)',     desc: 'Grok-1, Grok-2' },
+    { id: 'perplexity',  label: 'Perplexity',     desc: 'Sonar models with search' },
+    { id: 'together',    label: 'Together AI',    desc: 'Llama, Qwen, Mistral gateway' },
+    { id: 'cerebras',    label: 'Cerebras',       desc: 'Fastest Llama-3 inference' },
+    { id: 'qwen',        label: 'Qwen (Alibaba)', desc: 'Qwen-2.5-72B, Qwen-VL' },
+    { id: 'glm',         label: 'Zhipu (GLM)',    desc: 'GLM-4' },
     { id: 'groq',        label: 'Groq',           desc: 'Ultra-fast inference (LPU)' },
     { id: 'openai',      label: 'OpenAI',          desc: 'GPT-4o, o1, o3…' },
     { id: 'anthropic',   label: 'Anthropic',       desc: 'Claude Sonnet / Opus' },
@@ -16,6 +24,14 @@ export const PROVIDERS = [
 ];
 
 export const PROVIDER_MODELS = {
+    google:      ['gemini-2.0-flash', 'gemini-1.5-pro', 'gemini-1.5-flash'],
+    cohere:      ['command-r-plus', 'command-r'],
+    grok:        ['grok-2', 'grok-1'],
+    perplexity:  ['llama-3.1-sonar-large-128k-online', 'llama-3.1-sonar-small-128k-online'],
+    together:    ['meta-llama/Llama-3-70b-chat-hf', 'mistralai/Mixtral-8x7b-Instruct-v0.1'],
+    cerebras:    ['llama3.1-70b', 'llama3.1-8b'],
+    qwen:        ['qwen-max', 'qwen-plus', 'qwen-turbo'],
+    glm:         ['glm-4', 'glm-4-flash'],
     groq:        ['qwen/qwen3-32b', 'llama-3.3-70b-versatile', 'mixtral-8x7b-32768', 'gemma2-9b-it'],
     openai:      ['gpt-4o', 'gpt-4o-mini', 'o1', 'o3-mini'],
     anthropic:   ['claude-sonnet-4-5', 'claude-opus-4', 'claude-haiku-4-5'],

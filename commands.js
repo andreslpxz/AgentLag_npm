@@ -1,3 +1,6 @@
+import fs from "fs";
+import path from "path";
+import os from "os";
 // ─── commands.js ──────────────────────────────────────────────────────────────
 // Catálogo de slash commands y lógica de ejecución.
 import fs   from 'fs';
@@ -26,6 +29,7 @@ export const EFFORT_LEVELS    = ['low', 'medium', 'high', 'xhigh', 'max'];
 
 // ─── Catálogo ─────────────────────────────────────────────────────────────────
 export const SLASH_COMMANDS = [
+    { cmd: '/mcp',     desc: ['Añadir servidor MCP', '/mcp add-json name {"type":"http","url":"..."}'] },
     { cmd: '/add-dir',     desc: ['Añadir un directorio al workspace de confianza'] },
     { cmd: '/advisor',     desc: ['Activar/desactivar modelo asesor para decisiones complejas'] },
     { cmd: '/agents',      desc: ['Listar subagentes definidos por el usuario'] },
@@ -109,6 +113,106 @@ export function handleSlashCommand(trimmed, ctx) {
     } = ctx;
 
     switch (cmd) {
+        case '/language': {
+            setScreen('language');
+            setMenuIndex(0);
+            return true;
+        }
+        case '/mcp': {
+            const parts = args?.trim().split(/\s+/);
+            if (parts?.[0] === 'add-json') {
+                const name = parts[1];
+                let jsonStr = '';
+                let scope = 'project';
+
+                const remainder = parts.slice(2).join(' ');
+                const scopeMatch = remainder.match(/--scope\s+(\w+)/);
+                if (scopeMatch) {
+                    scope = scopeMatch[1];
+                    jsonStr = remainder.replace(scopeMatch[0], '').trim();
+                } else {
+                    jsonStr = remainder.trim();
+                }
+
+                if (jsonStr.startsWith("'") && jsonStr.endsWith("'")) jsonStr = jsonStr.slice(1, -1);
+                if (jsonStr.startsWith('"') && jsonStr.endsWith('"')) jsonStr = jsonStr.slice(1, -1);
+
+                try {
+                    const serverConfig = JSON.parse(jsonStr);
+                    const configDir = scope === 'user'
+                        ? path.join(os.homedir(), '.agentlag')
+                        : path.join(process.cwd(), '.agentlag');
+                    const configPath = path.join(configDir, 'mcp.json');
+
+                    if (!fs.existsSync(configDir)) fs.mkdirSync(configDir, { recursive: true });
+
+                    let mcpConfig = { mcpServers: {} };
+                    if (fs.existsSync(configPath)) {
+                        mcpConfig = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+                    }
+
+                    mcpConfig.mcpServers[name] = serverConfig;
+                    fs.writeFileSync(configPath, JSON.stringify(mcpConfig, null, 2));
+
+                    say(`✅ Servidor MCP "${name}" añadido al scope ${scope}.`);
+                    return true;
+                } catch (e) {
+                    say(`❌ Error: JSON inválido o problema al guardar: ${e.message}`);
+                    return true;
+                }
+            }
+            say('Uso: /mcp add-json <nombre> \'<json>\' [--scope user|project]');
+            return true;
+        }
+        case 'mcp': {
+            const parts = args?.trim().split(/\s+/);
+            if (parts?.[0] === 'add-json') {
+                // agentlag mcp add-json <nombre> '<json>' [--scope user|project]
+                const name = parts[1];
+                let jsonStr = '';
+                let scope = 'project';
+
+                // Unir el resto para buscar el JSON y el scope
+                const remainder = parts.slice(2).join(' ');
+                const scopeMatch = remainder.match(/--scope\s+(\w+)/);
+                if (scopeMatch) {
+                    scope = scopeMatch[1];
+                    jsonStr = remainder.replace(scopeMatch[0], '').trim();
+                } else {
+                    jsonStr = remainder.trim();
+                }
+
+                // Quitar comillas si las hay
+                if (jsonStr.startsWith("'") && jsonStr.endsWith("'")) jsonStr = jsonStr.slice(1, -1);
+                if (jsonStr.startsWith('"') && jsonStr.endsWith('"')) jsonStr = jsonStr.slice(0, -1);
+
+                try {
+                    const serverConfig = JSON.parse(jsonStr);
+                    const configDir = scope === 'user'
+                        ? path.join(os.homedir(), '.agentlag')
+                        : path.join(process.cwd(), '.agentlag');
+                    const configPath = path.join(configDir, 'mcp.json');
+
+                    if (!fs.existsSync(configDir)) fs.mkdirSync(configDir, { recursive: true });
+
+                    let mcpConfig = { mcpServers: {} };
+                    if (fs.existsSync(configPath)) {
+                        mcpConfig = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+                    }
+
+                    mcpConfig.mcpServers[name] = serverConfig;
+                    fs.writeFileSync(configPath, JSON.stringify(mcpConfig, null, 2));
+
+                    say();
+                    return true;
+                } catch (e) {
+                    say();
+                    return true;
+                }
+            }
+            say('Uso: /mcp add-json <nombre> '<json>' [--scope user|project]');
+            return true;
+        }
         case '/help': {
             const width   = Math.max(...SLASH_COMMANDS.map(c => c.cmd.length));
             const helpText = SLASH_COMMANDS

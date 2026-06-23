@@ -187,7 +187,7 @@ export const ProviderScreen = ({ menuIndex }) => (
     <Box flexDirection="column" paddingX={1} paddingY={1}>
         <AgentLogo /><Newline />
         <Text color="gray">{'─'.repeat(69)}</Text>
-        <Text bold> Choose your LLM Provider</Text><Newline />
+        <Text bold> t("select_provider")</Text><Newline />
         {PROVIDERS.map((p, i) => (
             <Box key={p.id}>
                 {i === menuIndex
@@ -206,7 +206,7 @@ export const ApiKeyScreen = ({ provider, inputText, showError }) => {
         <Box flexDirection="column" paddingX={1} paddingY={1}>
             <AgentLogo /><Newline />
             <Text color="gray">{'─'.repeat(69)}</Text>
-            <Text bold> Enter API Key for <Text color="#00FF87">{provider?.label}</Text></Text><Newline />
+            <Text bold> t("enter_api_key") <Text color="#00FF87">{provider?.label}</Text></Text><Newline />
             <Text color="gray"> {noKey
                 ? 'No necesita API key — se ejecuta localmente'
                 : 'Your key is stored locally in ~/.agentlag/config.json'}</Text>
@@ -259,7 +259,7 @@ export const ModelScreen = ({ provider, menuIndex, inputText, ollamaModels, olla
             <AgentLogo /><Newline />
             <Text color="gray">{'─'.repeat(69)}</Text>
             <Text bold>
-                {' '}{isHF ? 'Escribe el modelo de HuggingFace' : 'Select or type model for'}{' '}
+                {' '}{isHF ? 'Escribe el modelo de HuggingFace' : 't("select_model")'}{' '}
                 <Text color="#00FF87">{provider?.label}</Text>
             </Text><Newline />
             {isHF && (
@@ -351,6 +351,25 @@ export const CommandMenu = ({ input, selectedIndex, slashCommands }) => {
                     </Box>
                 );
             })}
+        </Box>
+    );
+};
+
+export const LanguageScreen = ({ menuIndex, languages }) => {
+    return (
+        <Box flexDirection="column" paddingX={1} paddingY={1}>
+            <AgentLogo /><Newline />
+            <Text color="gray">{'─'.repeat(69)}</Text>
+            <Text bold> {t('language_selection')}</Text><Newline />
+            {languages.map((lang, i) => (
+                <Box key={lang}>
+                    {i === menuIndex
+                        ? <Text color="cyan">❯ <Text color="white" bold>{lang.toUpperCase()}</Text></Text>
+                        : <Text color="gray">  {lang.toUpperCase()}</Text>}
+                </Box>
+            ))}
+            <Newline /><Text color="gray"> {t('press_enter_to_continue')}</Text>
+            <Text color="gray">{'╌'.repeat(69)}</Text>
         </Box>
     );
 };
