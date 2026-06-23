@@ -11,6 +11,7 @@ import { HumanMessage } from '@langchain/core/messages';
 import { spawn } from 'child_process';
 import fs   from 'fs';
 import path from 'path';
+import { t, getAvailableLanguages, setLanguage } from './i18n.js';
 
 // Módulos propios
 import { loadConfig, saveConfig, clearLatestSession, saveSession } from './session.js';
@@ -222,6 +223,19 @@ const App = ({ config: initCfg }) => {
         if (key.ctrl && str === 'c') saveAndExit();
 
         // ── Setup screens ─────────────────────────────────────────────────────
+        if (screen === 'language') {
+            const langs = getAvailableLanguages();
+            if (key.upArrow)   setMenuIndex(i => Math.max(0, i - 1));
+            if (key.downArrow) setMenuIndex(i => Math.min(langs.length - 1, i + 1));
+            if (key.return) {
+                const sel = langs[menuIndex];
+                setLanguage(sel);
+                cfg.current = { ...cfg.current, language: sel };
+                saveConfig(cfg.current);
+                setMenuIndex(0); setScreen('color');
+            }
+            return;
+        }
 
         if (screen === 'color') {
             if (key.upArrow)   setMenuIndex(i => Math.max(0, i - 1));

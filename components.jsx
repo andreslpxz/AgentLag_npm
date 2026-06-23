@@ -1,5 +1,6 @@
 // ─── components.jsx ───────────────────────────────────────────────────────────
 // Todos los componentes React/Ink puros (sin estado global).
+import { t } from './i18n.js';
 import React from 'react';
 import { Text, Box, Newline, useStdout } from 'ink';
 import { PROVIDERS, PROVIDER_MODELS }    from './providers.js';
@@ -187,7 +188,7 @@ export const ProviderScreen = ({ menuIndex }) => (
     <Box flexDirection="column" paddingX={1} paddingY={1}>
         <AgentLogo /><Newline />
         <Text color="gray">{'─'.repeat(69)}</Text>
-        <Text bold> t("select_provider")</Text><Newline />
+        <Text bold>{t("select_provider")}</Text><Newline />
         {PROVIDERS.map((p, i) => (
             <Box key={p.id}>
                 {i === menuIndex
@@ -206,7 +207,7 @@ export const ApiKeyScreen = ({ provider, inputText, showError }) => {
         <Box flexDirection="column" paddingX={1} paddingY={1}>
             <AgentLogo /><Newline />
             <Text color="gray">{'─'.repeat(69)}</Text>
-            <Text bold> t("enter_api_key") <Text color="#00FF87">{provider?.label}</Text></Text><Newline />
+            <Text bold>{t("enter_api_key")} <Text color="#00FF87">{provider?.label}</Text></Text><Newline />
             <Text color="gray"> {noKey
                 ? 'No necesita API key — se ejecuta localmente'
                 : 'Your key is stored locally in ~/.agentlag/config.json'}</Text>
@@ -259,7 +260,7 @@ export const ModelScreen = ({ provider, menuIndex, inputText, ollamaModels, olla
             <AgentLogo /><Newline />
             <Text color="gray">{'─'.repeat(69)}</Text>
             <Text bold>
-                {' '}{isHF ? 'Escribe el modelo de HuggingFace' : 't("select_model")'}{' '}
+                {' '}{isHF ? 'Escribe el modelo de HuggingFace' : t('select_model')}{' '}
                 <Text color="#00FF87">{provider?.label}</Text>
             </Text><Newline />
             {isHF && (
