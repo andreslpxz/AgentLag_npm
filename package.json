@@ -11,6 +11,16 @@
     "*.jsx",
     "public/"
   ],
+  "license": "MIT",
+  "keywords": [
+    "ai",
+    "agent",
+    "cli",
+    "mcp",
+    "langgraph",
+    "automation",
+    "productivity"
+  ],
   "scripts": {
     "devintest": "npx tsx cli.jsx",
     "test": "node --test tests/*.test.js",
