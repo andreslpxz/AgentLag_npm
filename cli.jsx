@@ -21,7 +21,7 @@ import {
     runAgentTurn, downloadHFModel,
 } from './agent_runner.js';
 import {
-    HR, WelcomeBox, UserMessage, AssistantMessage, ToolLine, ConfirmDialog,
+    HR, LanguageScreen, WelcomeBox, UserMessage, AssistantMessage, ToolLine, ConfirmDialog,
     ShortcutsHelp, ColorScreen, TrustScreen, ProviderScreen,
     ApiKeyScreen, DownloadScreen, ModelScreen, CommandMenu,
 } from './components.jsx';
