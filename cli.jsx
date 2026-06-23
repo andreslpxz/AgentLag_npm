@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+#!/usr/bin/env tsx
 // ─── cli.jsx ──────────────────────────────────────────────────────────────────
 // Entry point del CLI. Solo orquesta: importa módulos y monta el componente App.
 import { addEvolution, getEvolutions } from './evolution_store.js';
@@ -29,6 +29,7 @@ import {
 // ─── App principal ────────────────────────────────────────────────────────────
 const App = ({ config: initCfg }) => {
     const initScreen = () => {
+        if (!initCfg.language) return 'language';
         if (!initCfg.colorSet) return 'color';
         if (!initCfg.trusted)  return 'trust';
         if (!initCfg.provider) return 'provider';
@@ -221,6 +222,7 @@ const App = ({ config: initCfg }) => {
         if (key.ctrl && str === 'c') saveAndExit();
 
         // ── Setup screens ─────────────────────────────────────────────────────
+
         if (screen === 'color') {
             if (key.upArrow)   setMenuIndex(i => Math.max(0, i - 1));
             if (key.downArrow) setMenuIndex(i => Math.min(3, i + 1));
@@ -454,6 +456,8 @@ const App = ({ config: initCfg }) => {
     });
 
     // ── Render ────────────────────────────────────────────────────────────────
+
+        if (screen === 'language')    return <LanguageScreen menuIndex={menuIndex} languages={getAvailableLanguages()} />;
     if (screen === 'color')       return <ColorScreen    menuIndex={menuIndex} />;
     if (screen === 'trust')       return <TrustScreen    menuIndex={menuIndex} />;
     if (screen === 'provider')    return <ProviderScreen menuIndex={menuIndex} />;
@@ -465,7 +469,7 @@ const App = ({ config: initCfg }) => {
     const spinner    = SPINNERS[spinFrame];
     const timeStr    = elapsed > 0 ? ` (${elapsed}s)` : '';
     const tokenStr   = totalTokens > 0 ? ` · ↓ ${totalTokens} tokens` : '';
-    const CONFIRM_OPTS = ['Yes', 'Yes, allow all for this session', 'No'];
+    const CONFIRM_OPTS = [t('yes'), t('allow_all'), t('no')];
 
     return (
         <Box flexDirection="column">
@@ -474,7 +478,7 @@ const App = ({ config: initCfg }) => {
                 {(item, index) => {
                     if (item.type === 'welcome')   return <WelcomeBox key="welcome" provider={item.provider} model={item.model} />;
                     if (item.type === 'user')      return <UserMessage      key={index} text={item.text} />;
-                    if (item.type === 'assistant') return <AssistantMessage key={index} text={item.text} />;
+                    if (item.type === 'assistant') return <AssistantMessage key={index} text={item.text === 'Welcome back Alonso!' ? t('welcome') : item.text} />;
                     if (item.type === 'tool')      return (
                         <Box key={index} marginTop={1}>
                             <ToolLine name={item.name} input={item.input} output={item.output} running={false} />

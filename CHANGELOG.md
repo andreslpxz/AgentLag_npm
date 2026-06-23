@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.1.0 - 2026-05-18
+## 1.1.1 - 2026-05-18
 
 ### Added
 - `search_in_files` for repo-wide literal or regex search.
