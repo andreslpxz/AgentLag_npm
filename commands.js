@@ -106,7 +106,7 @@ export function handleSlashCommand(trimmed, ctx) {
         totalTokens, effortLevel, setEffortLevel,
         focusMode, setFocusMode, forceReAct, setForceReAct,
         advisorEnabled, setAdvisorEnabled, setAgent,
-        schedulerRef,
+        schedulerRef, lastError,
     } = ctx;
 
     switch (cmd) {
@@ -310,7 +310,7 @@ export function handleSlashCommand(trimmed, ctx) {
             const mcpCfg = loadMcpConfig();
             const mcpCount = Object.keys(mcpCfg.mcpServers || {}).length;
 
-            const info = [
+            let info = [
                 t('cmd_debug_title'),
                 `- ${t('label_provider')}: ${cfg.current.provider}`,
                 `- ${t('label_model')}: ${cfg.current.model}`,
@@ -320,9 +320,20 @@ export function handleSlashCommand(trimmed, ctx) {
                 `- ${t('label_force_react')}: ${forceReAct ? t('label_yes').toUpperCase() : t('label_no').toUpperCase()}`,
                 `- Current CWD: ${process.cwd()}`,
                 `- Config Path: ~/.agentlag/config.json`,
-                "",
-                t('cmd_debug_tip')
             ].join('\n');
+
+            if (lastError) {
+                info += `\n\n❌ [LAST ERROR]\n`;
+                info += `- Message: ${lastError.message || lastError}\n`;
+                if (lastError.stack) {
+                    info += `- Stack: ${lastError.stack.split('\n').slice(0, 5).join('\n    ')}\n`;
+                }
+                if (lastError.response?.data) {
+                    info += `- Response Data: ${JSON.stringify(lastError.response.data, null, 2)}\n`;
+                }
+            }
+
+            info += `\n\n` + t('cmd_debug_tip');
 
             say(info);
             return true;

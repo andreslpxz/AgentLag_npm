@@ -79,6 +79,7 @@ const App = ({ config: initCfg }) => {
     const currentConversationRef = useRef(null);
     const [agent,       setAgent]      = useState(null);
     const [agentError,  setAgentError] = useState(null);
+    const [lastError,   setLastError]  = useState(null);
 
     // ── Feature flags ─────────────────────────────────────────────────────────
     const [isVerbose,      setIsVerbose]      = useState(false);
@@ -157,7 +158,9 @@ const App = ({ config: initCfg }) => {
             buildAgent()
                 .then(ag => { setAgent(ag); setAgentError(null); })
                 .catch(err => {
-                    const msg = err?.message || String(err || 'Unknown error'); setAgentError(msg);
+                    const msg = err?.message || String(err || 'Unknown error');
+                    setAgentError(msg);
+                    setLastError(err);
                     setStaticHistory(prev => [...prev, { type: 'assistant', text: t('error_starting_agent', { error: msg }) }]);
                 });
             const pending = getEvolutions();
@@ -221,6 +224,7 @@ const App = ({ config: initCfg }) => {
         advisorEnabled, setAdvisorEnabled,
         agent, setAgent, schedulerRef,
         selProvider, runAgentTurn,
+        lastError, setLastError,
     };
 
     // ── useInput ──────────────────────────────────────────────────────────────
@@ -465,6 +469,7 @@ const App = ({ config: initCfg }) => {
                 setThinkWord, setThinkStart, setElapsed, setTotalTokens,
                 abortCtrlRef, askConfirm,
                 setAgent, setForceReAct, persistFlag,
+                setLastError,
             });
             return;
         }

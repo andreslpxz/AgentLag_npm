@@ -5,7 +5,7 @@ import path from 'path';
 import os   from 'os';
 import { spawn } from 'child_process';
 import { HumanMessage, AIMessage } from '@langchain/core/messages';
-import { buildAgent, stripMarkdown, trySalvageToolCall } from './agent.js';
+import { buildAgent, stripMarkdown, trySalvageToolCall, messageText } from './agent.js';
 import { RecordingSession } from './recording_logger.js';
 import { analyzeAndEvolve } from './evolution_engine.js';
 import { addEvolution } from './evolution_store.js';
@@ -37,6 +37,7 @@ export async function runAgentTurn(msg, ctx) {
         setThinkWord, setThinkStart, setElapsed, setTotalTokens,
         abortCtrlRef, askConfirm,
         setAgent, setForceReAct, persistFlag,
+        setLastError,
     } = ctx;
 
     const session = new RecordingSession(msg);
@@ -77,11 +78,12 @@ export async function runAgentTurn(msg, ctx) {
     abortCtrlRef.current = new AbortController();
 
     try {
-        const responseText = await _streamAgent(agent, msgRef, setStaticHistory, setStatus, setActiveTool,
+        const response = await _streamAgent(agent, msgRef, setStaticHistory, setStatus, setActiveTool,
             setThinkWord, setThinkStart, setTotalTokens, abortCtrlRef, askConfirm);
 
-        if (responseText) {
-            const cleaned = stripMarkdown(responseText);
+        if (response) {
+            const text = typeof response === 'string' ? response : messageText(response);
+            const cleaned = stripMarkdown(text);
             setStaticHistory(prev => [...prev, { type: 'assistant', text: cleaned }]);
             session.logInteraction('assistant', cleaned);
         }
@@ -107,9 +109,10 @@ export async function runAgentTurn(msg, ctx) {
         })();
 
     } catch (err) {
+        if (setLastError) setLastError(err);
         await _handleAgentError(err, agent, msgRef, setStaticHistory, setStatus, setActiveTool,
             setThinkWord, setThinkStart, setTotalTokens, abortCtrlRef, askConfirm,
-            setAgent, setForceReAct, persistFlag);
+            setAgent, setForceReAct, persistFlag, setLastError);
     } finally {
         setStatus('idle'); setActiveTool(null); setThinkStart(null); setElapsed(0);
     }
@@ -180,18 +183,22 @@ async function _streamAgent(agent, msgRef, setStaticHistory, setStatus, setActiv
         }
     }
 
-    // Extraer respuesta final
-    let responseText = '';
+    // Extraer respuesta final (AIMessage completo para manejar contenido multimodal/arrays)
+    let finalAIMessage = null;
     for (let i = allChunks.length - 1; i >= 0; i--) {
         const nd = allChunks[i].agent || allChunks[i].tools;
         if (!nd?.messages) continue;
         for (let j = nd.messages.length - 1; j >= 0; j--) {
             const m = nd.messages[j];
-            if (m instanceof AIMessage && typeof m.content === 'string' && m.content.trim()) {
-                responseText = m.content.trim(); break;
+            if (m instanceof AIMessage) {
+                const text = messageText(m);
+                if (text && text.trim()) {
+                    finalAIMessage = m;
+                    break;
+                }
             }
         }
-        if (responseText) break;
+        if (finalAIMessage) break;
     }
 
     const allMsgs = [];
@@ -200,12 +207,12 @@ async function _streamAgent(agent, msgRef, setStaticHistory, setStatus, setActiv
             if (c[nk]?.messages) allMsgs.push(...c[nk].messages);
     msgRef.current = [...msgRef.current, ...allMsgs];
 
-    return responseText;
+    return finalAIMessage;
 }
 
 async function _handleAgentError(err, agent, msgRef, setStaticHistory, setStatus, setActiveTool,
     setThinkWord, setThinkStart, setTotalTokens, abortCtrlRef, askConfirm,
-    setAgent, setForceReAct, persistFlag)
+    setAgent, setForceReAct, persistFlag, setLastError)
 {
     if (err?.message?.includes('Recursion limit')) {
         setStaticHistory(prev => [...prev, { type: 'assistant', text: t('recursion_limit_error') }]);
