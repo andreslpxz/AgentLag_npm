@@ -159,9 +159,11 @@ const App = ({ config: initCfg }) => {
                 .then(ag => { setAgent(ag); setAgentError(null); })
                 .catch(err => {
                     const msg = err?.message || String(err || 'Unknown error');
-                    setAgentError(msg);
-                    setLastError(err);
-                    setStaticHistory(prev => [...prev, { type: 'assistant', text: t('error_starting_agent', { error: msg }) }]);
+                    if (msg !== agentError) {
+                        setAgentError(msg);
+                        setLastError(err);
+                        setStaticHistory(prev => [...prev, { type: 'assistant', text: t('error_starting_agent', { error: msg }) }]);
+                    }
                 });
             const pending = getEvolutions();
             if (pending.length > 0) {
@@ -230,6 +232,20 @@ const App = ({ config: initCfg }) => {
     // ── useInput ──────────────────────────────────────────────────────────────
     useInput((str, key) => {
         if (key.ctrl && str === 'c') saveAndExit();
+
+        // ── Bloqueo si el agente falló ────────────────────────────────────────
+        if (screen === 'main' && agentError && !input.startsWith('/')) {
+            // Permitimos comandos slash para reconfigurar, pero no mensajes normales
+            if (key.return) {
+                const trimmed = input.trim();
+                if (trimmed && !trimmed.startsWith('/')) {
+                    // No hacemos nada o podrías mostrar un aviso breve.
+                    // El useEffect ya puso el error en el historial.
+                    setInput('');
+                    return;
+                }
+            }
+        }
 
         // ── Setup screens ─────────────────────────────────────────────────────
         if (screen === 'language') {

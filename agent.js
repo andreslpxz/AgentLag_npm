@@ -60,17 +60,21 @@ async function createLLM(provider, model, apiKey, baseUrl) {
 
     switch (provider) {
         case "google": {
+            const googleOpts = { ...commonOpts };
+            if (googleOpts.maxTokens) {
+                googleOpts.maxOutputTokens = googleOpts.maxTokens;
+                delete googleOpts.maxTokens;
+            }
             return new ChatGoogleGenerativeAI({
-                modelName: model,
+                model: model,
                 apiKey: apiKey || process.env.GOOGLE_GENAI_API_KEY,
-                ...commonOpts
+                ...googleOpts
             });
         }
         case "cohere": {
-            return new ChatOpenAI({
+            return new ChatCohere({
                 model,
                 apiKey: apiKey || process.env.COHERE_API_KEY,
-                configuration: { baseURL: "https://api.cohere.com/v2" },
                 ...commonOpts
             });
         }
