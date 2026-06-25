@@ -67,9 +67,10 @@ async function createLLM(provider, model, apiKey, baseUrl) {
             });
         }
         case "cohere": {
-            return new ChatCohere({
+            return new ChatOpenAI({
                 model,
                 apiKey: apiKey || process.env.COHERE_API_KEY,
+                configuration: { baseURL: "https://api.cohere.com/v2" },
                 ...commonOpts
             });
         }
@@ -224,7 +225,7 @@ function toolSummary(allTools) {
     return list.map(t => `- ${t.name.padEnd(14)} → ${t.description}`).join("\n");
 }
 
-function messageText(message) {
+export function messageText(message) {
     const content = message?.content;
     if (typeof content === "string") return content;
     if (Array.isArray(content)) {
@@ -410,7 +411,7 @@ function cleanReActResponse(text) {
 
 // ─── Limpiar markdown para terminal ───────────────────────────────────────────
 export function stripMarkdown(text) {
-    if (!text) return text;
+    if (!text || typeof text !== 'string') return text;
     return text
         .replace(/\*\*(.+?)\*\*/g, '$1')
         .replace(/\*(.+?)\*/g, '$1')
@@ -485,11 +486,23 @@ export async function buildAgent(overrides = {}) {
 
     if (provider !== "ollama" && provider !== "huggingface" && !apiKey) {
         const envVars = {
-            groq: "GROQ_API_KEY", openai: "OPENAI_API_KEY",
-            anthropic: "ANTHROPIC_API_KEY", openrouter: "OPENROUTER_API_KEY",
+            google: "GOOGLE_GENAI_API_KEY",
+            cohere: "COHERE_API_KEY",
+            grok: "GROK_API_KEY",
+            perplexity: "PERPLEXITY_API_KEY",
+            together: "TOGETHER_API_KEY",
+            cerebras: "CEREBRAS_API_KEY",
+            qwen: "QWEN_API_KEY",
+            glm: "GLM_API_KEY",
+            groq: "GROQ_API_KEY",
+            openai: "OPENAI_API_KEY",
+            anthropic: "ANTHROPIC_API_KEY",
+            openrouter: "OPENROUTER_API_KEY",
             lightning: "LIGHTNING_API_KEY",
-            deepseek: "DEEPSEEK_API_KEY", mistral: "MISTRAL_API_KEY",
-            nvidia: "NVIDIA_API_KEY", meta: "TOGETHER_API_KEY",
+            deepseek: "DEEPSEEK_API_KEY",
+            mistral: "MISTRAL_API_KEY",
+            nvidia: "NVIDIA_API_KEY",
+            meta: "TOGETHER_API_KEY",
         };
         const envKey = process.env[envVars[provider]];
         if (!envKey) {

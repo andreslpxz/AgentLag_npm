@@ -1030,9 +1030,17 @@ export function setLanguage(lang) {
 
 export function t(key, params = {}) {
     let text = translations[currentLang]?.[key] || translations['en'][key] || key;
+    if (typeof text !== 'string') {
+        try {
+            text = String(text || key || '');
+        } catch (e) {
+            text = 'i18n_error';
+        }
+    }
     Object.keys(params).forEach(p => {
         const regex = new RegExp(`{${p}}`, 'g');
-        text = text.replace(regex, params[p]);
+        const val = params[p] !== undefined && params[p] !== null ? String(params[p]) : '';
+        text = text.replace(regex, val);
     });
     return text;
 }
