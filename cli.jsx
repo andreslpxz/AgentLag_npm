@@ -15,6 +15,7 @@ import { t, getAvailableLanguages, setLanguage } from './i18n.js';
 
 // Módulos propios
 import { loadConfig, saveConfig, clearLatestSession, saveSession } from './session.js';
+import { getFromMemory } from './memory_utils.js';
 import { PROVIDERS, PROVIDER_MODELS }   from './providers.js';
 import { SLASH_COMMANDS, handleSlashCommand, EFFORT_LEVELS, AGENTLAG_VERSION } from './commands.js';
 import {
@@ -141,12 +142,14 @@ const App = ({ config: initCfg }) => {
     // ── Inicializar agente ────────────────────────────────────────────────────
     useEffect(() => {
         if (screen === 'main' && !agent) {
+            const userName = getFromMemory('user_name') || getFromMemory('User_name') || getFromMemory('nombre_usuario');
             setStaticHistory(prev => {
                 if (!prev.some(i => i.type === 'welcome')) {
                     return [{
                         type:     'welcome',
                         provider: selProvider?.label || cfg.current.provider || 'provider',
                         model:    selModel || cfg.current.model || 'model',
+                        userName: userName,
                     }, ...prev];
                 }
                 return prev;
@@ -208,14 +211,16 @@ const App = ({ config: initCfg }) => {
         cfg, saveAndExit,
         say, lastAssistantText, persistFlag, rebuildAgentWith,
         setScreen, setMenuIndex, setFormInput,
-        setStaticHistory, setTotalTokens,
+        setStaticHistory, setStatus, setActiveTool,
+        setThinkWord, setThinkStart, setElapsed, setTotalTokens,
+        abortCtrlRef, askConfirm,
         msgRef, historyRef, currentConversationRef,
         totalTokens, effortLevel, setEffortLevel,
         focusMode, setFocusMode,
         forceReAct, setForceReAct,
         advisorEnabled, setAdvisorEnabled,
         agent, setAgent, schedulerRef,
-        selProvider,
+        selProvider, runAgentTurn,
     };
 
     // ── useInput ──────────────────────────────────────────────────────────────
@@ -490,7 +495,7 @@ const App = ({ config: initCfg }) => {
             {/* ── Historial estático (nunca se re-renderiza) ────────────────── */}
             <Static items={focusMode ? staticHistory.filter(i => i.type !== 'tool') : staticHistory}>
                 {(item, index) => {
-                    if (item.type === 'welcome')   return <WelcomeBox key="welcome" provider={item.provider} model={item.model} />;
+                    if (item.type === 'welcome')   return <WelcomeBox key="welcome" provider={item.provider} model={item.model} userName={item.userName} />;
                     if (item.type === 'user')      return <UserMessage      key={index} text={item.text} />;
                     if (item.type === 'assistant') return <AssistantMessage key={index} text={(item.text === 'Welcome back!' || item.text === '¡Bienvenido de nuevo!') ? t('welcome') : item.text} />;
                     if (item.type === 'tool')      return (
