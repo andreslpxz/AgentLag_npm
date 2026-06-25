@@ -6,7 +6,7 @@ import { spawn, execSync } from 'child_process';
 import {
     CONFIG_DIR, MEMORY_FILE, HOOKS_FILE, MCP_FILE, AGENTS_DIR,
     normalizeConversationName, listConversations, conversationFile,
-    loadSession, saveSession, clearLatestSession,
+    loadSession, saveSession, clearLatestSession, saveConfig,
 } from './session.js';
 import { copyToClipboard, splitCommandArgs, runCommand } from './utils.js';
 import { clearSkillsCache, formatSkillsIndex, readSkill, listInstalledSkills } from './skills.js';
@@ -1225,122 +1225,19 @@ export function handleSlashCommand(trimmed, ctx) {
         //   /audit
         // ─────────────────────────────────────────────────────────────────────
         case '/audit': {
-            say(t('cmd_audit_starting'));
-            const outDir3  = path.join(process.cwd(), '.agentlag', 'audits');
-            const outFile3 = path.join(outDir3, `audit-${Date.now()}.md`);
-            const dateStr3 = new Date().toLocaleDateString('es-ES', { year: 'numeric', month: 'long', day: 'numeric' });
+            const auditMsg = `Realiza una auditoría de seguridad completa del proyecto actual.
+Por favor:
+1. Ejecuta 'npm audit' si es un proyecto Node.js.
+2. Busca secrets expuestos (API keys, passwords, tokens) usando search_in_files o grep.
+3. Busca patrones peligrosos (eval, innerHTML, http sin https, catch vacíos).
+4. Verifica si hay archivos sensibles expuestos (.env, claves privadas).
+5. Genera un reporte detallado en Markdown y guárdalo en .agentlag/audits/audit-[timestamp].md.
+6. Resume los hallazgos principales aquí.`;
 
-            const sections3 = [];
-
-            // 1. npm audit
-            let npmAudit = '_No se pudo ejecutar npm audit (¿no es un proyecto Node.js?)_';
-            try {
-                npmAudit = execSync('npm audit --json 2>/dev/null', { cwd: process.cwd(), encoding: 'utf8', timeout: 30000 });
-                const auditData = JSON.parse(npmAudit);
-                const vulns = auditData.metadata?.vulnerabilities || {};
-                const total = (vulns.critical||0) + (vulns.high||0) + (vulns.moderate||0) + (vulns.low||0);
-                npmAudit = total === 0
-                    ? '✅ Sin vulnerabilidades detectadas por npm audit.'
-                    : `🔴 **${total} vulnerabilidades**: Critical: ${vulns.critical||0} · High: ${vulns.high||0} · Moderate: ${vulns.moderate||0} · Low: ${vulns.low||0}\n\nEjecuta \`npm audit fix\` para corregirlas.`;
-            } catch (e) {
-                npmAudit = `⚠️ npm audit no disponible: ${e.message.slice(0,100)}`;
-            }
-            sections3.push(`## 📦 Dependencias (npm audit)\n\n${npmAudit}`);
-
-            // 2. Buscar secrets expuestos
-            say(t('audit_searching_secrets'));
-            let secretsFound = [];
-            try {
-                const secretPatterns = [
-                    { label: t('audit_secret_apikey'), pattern: '(api_key|apikey|APIKEY)\\s*=\\s*["\'][^"\']{8,}' },
-                    { label: t('audit_secret_password'), pattern: '(password|passwd|pwd)\\s*=\\s*["\'][^"\']{4,}' },
-                    { label: t('audit_secret_token'),    pattern: '(token|TOKEN)\\s*=\\s*["\'][^"\']{8,}' },
-                    { label: t('audit_secret_secret'),   pattern: '(secret|SECRET)\\s*=\\s*["\'][^"\']{8,}' },
-                    { label: t('audit_secret_aws'),              pattern: 'AKIA[0-9A-Z]{16}' },
-                    { label: t('audit_secret_privkey'),          pattern: 'BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY' },
-                ];
-                for (const { label, pattern } of secretPatterns) {
-                    try {
-                        const result = execSync(
-                            `grep -rIn --exclude-dir=node_modules --exclude-dir=.git --exclude="*.lock" -E "${pattern}" "${process.cwd()}" 2>/dev/null || true`,
-                            { encoding: 'utf8', timeout: 10000 }
-                        );
-                        if (result.trim()) {
-                            const hits = result.trim().split('\n').slice(0,3).map(l => `  - \`${path.relative(process.cwd(), l.split(':')[0])}:${l.split(':')[1]}\``).join('\n');
-                            secretsFound.push(`🔴 **${label}**:\n${hits}`);
-                        }
-                    } catch {}
-                }
-            } catch {}
-            sections3.push(`## 🔑 Secrets expuestos\n\n${secretsFound.length > 0 ? secretsFound.join('\n\n') : '✅ No se detectaron secrets hardcodeados.'}`);
-
-            // 3. Patrones peligrosos en código
-            say(t('audit_searching_patterns'));
-            const dangerPatterns = [];
-            try {
-                const dangerous = [
-                    { label: t('audit_danger_eval'),           pattern: 'eval\\s*\\(' },
-                    { label: t('audit_danger_exec'),  pattern: 'exec\\s*\\(' },
-                    { label: t('audit_danger_innerhtml'),pattern: '\\.innerHTML\\s*=' },
-                    { label: t('audit_danger_http'),   pattern: 'http://' },
-                    { label: t('audit_danger_catch'),      pattern: 'catch\\s*\\(.*\\)\\s*\\{\\s*\\}' },
-                ];
-                for (const { label, pattern } of dangerous) {
-                    try {
-                        const result = execSync(
-                            `grep -rlIn --exclude-dir=node_modules --exclude-dir=.git -E "${pattern}" "${process.cwd()}" 2>/dev/null || true`,
-                            { encoding: 'utf8', timeout: 10000 }
-                        );
-                        if (result.trim()) {
-                            const files = result.trim().split('\n').slice(0,3).map(f => `\`${path.relative(process.cwd(), f)}\``).join(', ');
-                            dangerPatterns.push(`⚠️ **${label}** en: ${files}`);
-                        }
-                    } catch {}
-                }
-            } catch {}
-            sections3.push(`## ⚠️ Patrones peligrosos\n\n${dangerPatterns.length > 0 ? dangerPatterns.join('\n') : '✅ No se detectaron patrones peligrosos.'}`);
-
-            // 4. Archivos sensibles expuestos
-            const sensitiveFiles = ['.env', '.env.local', '.env.production', 'id_rsa', 'id_ed25519', '*.pem', 'credentials.json'];
-            const foundSensitive = sensitiveFiles.filter(f => {
-                try { execSync(`find "${process.cwd()}" -name "${f}" -not -path "*/node_modules/*" 2>/dev/null`, { encoding:'utf8', timeout:5000 }); return true; } catch { return false; }
-            });
-            sections3.push(`## 📁 Archivos sensibles\n\n${foundSensitive.length > 0 ? foundSensitive.map(f=>`⚠️ \`${f}\` encontrado en el proyecto`).join('\n') : '✅ No se encontraron archivos sensibles expuestos.'}`);
-
-            const doc = [
-                `# 🔐 Auditoría de Seguridad — ${dateStr3}`,
-                '',
-                `> **Proyecto:** \`${process.cwd()}\`  `,
-                `> _Generado por AgentLag /audit · ${new Date().toISOString()}_`,
-                '',
-                '---',
-                '',
-                sections3.join('\n\n---\n\n'),
-                '',
-                '---',
-                '',
-                '## 📋 Recomendaciones generales',
-                '',
-                '- Nunca committear archivos `.env` (añadir a `.gitignore`)',
-                '- Usar variables de entorno para todas las credenciales',
-                '- Ejecutar `npm audit fix` regularmente',
-                '- Revisar dependencias con `npm outdated`',
-                '- Evitar `eval()` e `innerHTML` sin sanitización',
-            ].join('\n');
-
-            try {
-                fs.mkdirSync(outDir3, { recursive: true });
-                fs.writeFileSync(outFile3, doc, 'utf8');
-                const totalIssues = secretsFound.length + dangerPatterns.length;
-                say([
-                    t('cmd_audit_ok'),
-                    t('audit_summary_secrets', { count: secretsFound.length }),
-                    t('audit_summary_patterns', { count: dangerPatterns.length }),
-                    totalIssues === 0 ? t('audit_summary_no_issues') : t('audit_summary_issues', { count: totalIssues }),
-                    t('audit_report', { file: outFile3 }),
-                ].join('\n'));
-            } catch (e) {
-                say(t('error_prefix', { error: e.message }));
+            if (ctx.runAgentTurn) {
+                ctx.runAgentTurn(auditMsg, ctx);
+            } else {
+                say(t('cmd_task_chat_plan', { msg: auditMsg }));
             }
             return true;
         }

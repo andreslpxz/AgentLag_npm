@@ -38,13 +38,15 @@ export const AgentLogo = () => (
     </Box>
 );
 
-export const WelcomeBox = ({ provider, model }) => (
+export const WelcomeBox = ({ provider, model, userName }) => (
     <Box flexDirection="column" borderStyle="round" borderColor="gray"
          paddingX={2} paddingY={1} marginBottom={1}>
         <Box>
-            <Text bold>{t('welcome')} </Text>
-            <Text color="white" bold>Alonso</Text>
-            <Text bold>!</Text>
+            {userName ? (
+                <Text bold>{t('welcome_user', { name: userName })}</Text>
+            ) : (
+                <Text bold>{t('welcome')}</Text>
+            )}
         </Box>
         <Newline />
         <AgentLogo />
