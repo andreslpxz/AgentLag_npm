@@ -156,7 +156,13 @@ export function handleSlashCommand(trimmed, ctx) {
                     }
                 } else {
                     // /mcp add name command args...
-                    const cmdArgs = scopeMatch ? remainder.replace(scopeMatch[0], '').trim().split(/\s+/) : remainder.trim().split(/\s+/);
+                    const rawArgs = scopeMatch ? remainder.replace(scopeMatch[0], '').trim().split(/\s+/) : remainder.trim().split(/\s+/);
+                    const cmdArgs = rawArgs.map(a => {
+                        if ((a.startsWith("'") && a.endsWith("'")) || (a.startsWith('"') && a.endsWith('"'))) {
+                            return a.slice(1, -1);
+                        }
+                        return a;
+                    });
                     const command = cmdArgs[0];
                     const argsList = cmdArgs.slice(1);
                     if (!command) {
