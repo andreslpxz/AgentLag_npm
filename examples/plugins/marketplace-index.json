@@ -1,0 +1,29 @@
+[
+  {
+    "name": "dev-toolkit",
+    "version": "1.0.0",
+    "description": "Full-stack development toolkit with 10 agents, 5 skills, and 5 MCPs",
+    "author": "agentlag",
+    "repository": "andreslpxz/agentlag-plugins",
+    "downloads": 1250,
+    "tags": ["development", "testing", "documentation", "security"]
+  },
+  {
+    "name": "data-science",
+    "version": "1.0.0",
+    "description": "Data analysis, visualization, and ML pipeline tools",
+    "author": "community",
+    "repository": "andreslpxz/agentlag-plugins",
+    "downloads": 890,
+    "tags": ["data", "python", "ml", "visualization"]
+  },
+  {
+    "name": "content-creator",
+    "version": "1.0.0",
+    "description": "Blog posts, social media, SEO content generation",
+    "author": "community",
+    "repository": "andreslpxz/agentlag-plugins",
+    "downloads": 670,
+    "tags": ["content", "writing", "seo", "social"]
+  }
+]

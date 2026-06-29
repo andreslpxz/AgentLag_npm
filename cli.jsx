@@ -26,6 +26,7 @@ import {
     HR, LanguageScreen, WelcomeBox, UserMessage, AssistantMessage, ToolLine, ConfirmDialog,
     ShortcutsHelp, ColorScreen, TrustScreen, ProviderScreen,
     ApiKeyScreen, DownloadScreen, ModelScreen, CommandMenu,
+    BoxedOutput,
 } from './components.jsx';
 
 // ─── App principal ────────────────────────────────────────────────────────────
@@ -181,6 +182,10 @@ const App = ({ config: initCfg }) => {
         setStaticHistory(prev => [...prev, { type: 'assistant', text, ephemeral }]);
     }, []);
 
+    const sayBoxed = useCallback(({ title, lines, borderColor, titleColor, ephemeral }) => {
+        setStaticHistory(prev => [...prev, { type: 'boxed', title, lines, borderColor: borderColor || 'gray', titleColor: titleColor || 'white', ephemeral: !!ephemeral }]);
+    }, []);
+
     const lastAssistantText = useCallback(() => {
         for (let i = historyRef.current.length - 1; i >= 0; i--) {
             const item = historyRef.current[i];
@@ -220,7 +225,7 @@ const App = ({ config: initCfg }) => {
     // Contexto compartido con el handler de comandos
     const cmdCtx = {
         cfg, saveAndExit,
-        say, lastAssistantText, persistFlag, rebuildAgentWith,
+        say, sayBoxed, lastAssistantText, persistFlag, rebuildAgentWith,
         setScreen, setMenuIndex, setFormInput,
         setStaticHistory, setStatus, setActiveTool,
         setThinkWord, setThinkStart, setElapsed, setTotalTokens,
@@ -530,6 +535,7 @@ const App = ({ config: initCfg }) => {
                             <ToolLine name={item.name} input={item.input} output={item.output} running={false} />
                         </Box>
                     );
+                    if (item.type === 'boxed')     return <BoxedOutput key={index} title={item.title} lines={item.lines} borderColor={item.borderColor} titleColor={item.titleColor} />;
                     return null;
                 }}
             </Static>

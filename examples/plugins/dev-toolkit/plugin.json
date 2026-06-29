@@ -1,0 +1,112 @@
+{
+  "name": "dev-toolkit",
+  "version": "1.0.0",
+  "description": "Full-stack development toolkit",
+  "author": "agentlag",
+  "agents": [
+    {
+      "name": "code-reviewer",
+      "description": "Reviews code for bugs and style issues",
+      "file": "agents/code-reviewer.json"
+    },
+    {
+      "name": "test-writer",
+      "description": "Generates unit and integration tests",
+      "file": "agents/test-writer.json"
+    },
+    {
+      "name": "doc-generator",
+      "description": "Creates documentation from code",
+      "file": "agents/doc-generator.json"
+    },
+    {
+      "name": "refactorer",
+      "description": "Suggests and applies code refactoring",
+      "file": "agents/refactorer.json"
+    },
+    {
+      "name": "debugger",
+      "description": "Analyzes and fixes bugs",
+      "file": "agents/debugger.json"
+    },
+    {
+      "name": "api-designer",
+      "description": "Designs REST API schemas",
+      "file": "agents/api-designer.json"
+    },
+    {
+      "name": "db-migrator",
+      "description": "Creates database migrations",
+      "file": "agents/db-migrator.json"
+    },
+    {
+      "name": "perf-analyzer",
+      "description": "Analyzes performance bottlenecks",
+      "file": "agents/perf-analyzer.json"
+    },
+    {
+      "name": "security-auditor",
+      "description": "Checks for security vulnerabilities",
+      "file": "agents/security-auditor.json"
+    },
+    {
+      "name": "deploy-helper",
+      "description": "Generates deployment configurations",
+      "file": "agents/deploy-helper.json"
+    }
+  ],
+  "skills": [
+    {
+      "name": "react-patterns",
+      "description": "React component patterns and best practices",
+      "file": "skills/react-patterns/SKILL.md"
+    },
+    {
+      "name": "node-apis",
+      "description": "Node.js API development patterns",
+      "file": "skills/node-apis/SKILL.md"
+    },
+    {
+      "name": "git-workflow",
+      "description": "Git branching and workflow strategies",
+      "file": "skills/git-workflow/SKILL.md"
+    },
+    {
+      "name": "docker-setup",
+      "description": "Docker containerization patterns",
+      "file": "skills/docker-setup/SKILL.md"
+    },
+    {
+      "name": "testing-strategies",
+      "description": "Testing pyramid and strategies",
+      "file": "skills/testing-strategies/SKILL.md"
+    }
+  ],
+  "mcpServers": [
+    {
+      "name": "repomix",
+      "command": "npx",
+      "args": ["-y", "@yamadashy/repomix"]
+    },
+    {
+      "name": "context7",
+      "command": "npx",
+      "args": ["-y", "@upstash/context7-mcp"]
+    },
+    {
+      "name": "fetch",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-fetch"]
+    },
+    {
+      "name": "filesystem",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"]
+    },
+    {
+      "name": "sequential-thinking",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-sequential-thinking"]
+    }
+  ]
+}

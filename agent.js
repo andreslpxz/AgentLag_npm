@@ -19,6 +19,7 @@ import { buildSkillContextForMessage, formatSkillsIndex } from "./skills.js";
 import { loadMcpTools } from "./mcp_utils.js";
 import { listMemory } from './memory_utils.js';
 import { AGENTS_DIR } from "./session.js";
+import { getActivePlugins, formatPluginListForPrompt } from './plugin_engine.js';
 
 
 // ─── Cargar .env ──────────────────────────────────────────────────────────────
@@ -401,6 +402,8 @@ REGLAS PARA MEMORIA:
 
 🧩 SKILLS INSTALADAS:
 ${formatSkillsIndex(process.cwd())}
+
+${formatPluginListForPrompt(process.cwd())}
 
 REGLAS PARA SKILLS:
 - Sé PROACTIVO: si una tarea coincide con una skill instalada, léela con read_skill y aplica sus instrucciones de inmediato.

@@ -18,6 +18,12 @@ import { consolidateHistory } from './consolidator.js';
 import { buildAgent } from './agent.js';
 import { webSearch, tools } from './tools.js';
 import {
+    installPlugin, uninstallPlugin, listPlugins, getActivePlugins,
+    getPluginInfo, activatePlugin, deactivatePlugin,
+    searchMarketplace, refreshMarketplaceIndex, getPluginAgents,
+    getPluginSkills, getPluginMcpServers, formatPluginListForPrompt,
+} from './plugin_engine.js';
+import {
     getEffortConfig,
     validateEffortLevel,
     describeEffortSupport,
@@ -87,6 +93,7 @@ export const SLASH_COMMANDS = [
     { cmd: '/server',      desc: ['cmd_server_desc'] },
     { cmd: '/bot',         desc: ['cmd_bot_desc'] },
     { cmd: '/discord',     desc: ['cmd_discord_desc'] },
+    { cmd: '/plugin',      desc: ['cmd_plugin_desc'] },
     { cmd: '/skills',      desc: ['cmd_skills_desc'] },
     { cmd: '/version',     desc: ['cmd_version_desc'] },
 ];
@@ -99,7 +106,7 @@ export const SLASH_COMMANDS = [
  * @param {object} ctx       - Contexto de la aplicación (estado + setters).
  * @returns {boolean}        - true si el comando fue manejado; false si no era slash.
  */
-export function handleSlashCommand(trimmed, ctx) {
+export async function handleSlashCommand(trimmed, ctx) {
     if (!trimmed.startsWith('/')) return false;
 
     const [head, ...rest] = trimmed.split(/\s+/);
@@ -108,7 +115,7 @@ export function handleSlashCommand(trimmed, ctx) {
 
     const {
         cfg, saveAndExit,
-        say, lastAssistantText, persistFlag, rebuildAgentWith,
+        say, sayBoxed, lastAssistantText, persistFlag, rebuildAgentWith,
         setScreen, setMenuIndex, setFormInput,
         setStaticHistory, setTotalTokens,
         msgRef, historyRef, currentConversationRef,
@@ -374,33 +381,28 @@ export function handleSlashCommand(trimmed, ctx) {
             const skills = listInstalledSkills();
             const mcpCfg = loadMcpConfig();
             const mcpCount = Object.keys(mcpCfg.mcpServers || {}).length;
+            const activePlugins = getActivePlugins();
 
-            let info = [
-                t('cmd_debug_title'),
-                `- ${t('label_provider')}: ${cfg.current.provider}`,
-                `- ${t('label_model')}: ${cfg.current.model}`,
-                `- ${t('label_tools_native')}: ${tools.length}`,
-                `- ${t('label_mcp_servers')}: ${mcpCount}`,
-                `- ${t('label_installed_skills')}: ${skills.length}`,
-                `- ${t('label_force_react')}: ${forceReAct ? t('label_yes').toUpperCase() : t('label_no').toUpperCase()}`,
-                `- Current CWD: ${process.cwd()}`,
-                `- Config Path: ~/.agentlag/config.json`,
-            ].join('\n');
+            const lines = [
+                { text: `  Proveedor:        ${cfg.current.provider}`, color: 'cyan' },
+                { text: `  Modelo:           ${cfg.current.model}`, color: 'cyan' },
+                { text: `  Tools (nativas):  ${tools.length}`, color: 'cyan' },
+                { text: `  Servidores MCP:   ${mcpCount}`, color: 'cyan' },
+                { text: `  Skills:           ${skills.length}`, color: 'cyan' },
+                { text: `  Plugins activos:  ${activePlugins.length}`, color: 'cyan' },
+                { text: `  ReAct forzado:    ${forceReAct ? 'SI' : 'NO'}`, color: forceReAct ? 'yellow' : 'cyan' },
+                { text: `  Current CWD:      ${process.cwd()}`, color: 'gray' },
+                { text: `  Config Path:      ~/.agentlag/config.json`, color: 'gray' },
+            ];
 
             if (lastError) {
-                info += `\n\n❌ [LAST ERROR]\n`;
-                info += `- Message: ${lastError.message || lastError}\n`;
-                if (lastError.stack) {
-                    info += `- Stack: ${lastError.stack.split('\n').slice(0, 5).join('\n    ')}\n`;
-                }
-                if (lastError.response?.data) {
-                    info += `- Response Data: ${JSON.stringify(lastError.response.data, null, 2)}\n`;
-                }
+                lines.push({ text: '', color: 'gray' });
+                lines.push({ text: '  [LAST ERROR]', color: 'red', bold: true });
+                const errMsg = String(lastError.message || lastError).slice(0, 200);
+                lines.push({ text: `  ${errMsg}`, color: 'red' });
             }
 
-            info += `\n\n` + t('cmd_debug_tip');
-
-            say(info);
+            sayBoxed({ title: '  DEBUG INFO', lines, borderColor: 'yellow', titleColor: 'yellow' });
             return true;
         }
 
@@ -585,20 +587,29 @@ export function handleSlashCommand(trimmed, ctx) {
         }
 
         case '/context': {
-            // Estimación simple del prompt del sistema actual
-            const systemPromptText = `Eres AgentLag... ${formatSkillsIndex(process.cwd())}`; // Simplificado para el comando
+            const systemPromptText = `Eres AgentLag... ${formatSkillsIndex(process.cwd())}`;
             const estimatedSystemTokens = Math.ceil(systemPromptText.length / 4);
+            const activePlugins = getActivePlugins();
 
-            say([
-                t('cmd_context_title'),
-                `  • ${t('label_tokens')}: ${totalTokens}`,
-                `  • ${t('label_memory_msgs')}: ${msgRef.current.length}`,
-                `  • ${t('label_items_hist')}: ${historyRef.current.length}`,
-                `  • ${t('label_active_conv')}: ${currentConversationRef.current || '(latest)'}`,
-                `  • ${t('label_estimated_tokens')}: ~${estimatedSystemTokens} tokens`,
-                "",
-                t('cmd_context_tip')
-            ].join('\n'));
+            const lines = [
+                { text: `  Tokens acumulados (sesion):  ${totalTokens}`, color: 'cyan' },
+                { text: `  Mensajes en memoria:        ${msgRef.current.length}`, color: 'cyan' },
+                { text: `  Items en historial UI:      ${historyRef.current.length}`, color: 'cyan' },
+                { text: `  Conversacion activa:        ${currentConversationRef.current || '(latest)'}`, color: 'cyan' },
+                { text: `  Estimacion System Prompt:   ~${estimatedSystemTokens} tokens`, color: 'cyan' },
+                { text: `  Plugins activos:            ${activePlugins.length}`, color: 'cyan' },
+            ];
+            if (activePlugins.length > 0) {
+                lines.push({ text: '', color: 'gray' });
+                for (const p of activePlugins) {
+                    const agCnt = (p.agents || []).length;
+                    const skCnt = (p.skills || []).length;
+                    const mcCnt = Object.keys(p.mcpServers || {}).length;
+                    lines.push({ text: `  ${p.name}  (v${p.version})`, color: 'green', bold: true });
+                    lines.push({ text: `    ${agCnt} agents · ${skCnt} skills · ${mcCnt} MCPs`, color: 'gray' });
+                }
+            }
+            sayBoxed({ title: '  CONTEXTO', lines, borderColor: 'cyan' });
             return true;
         }
 
@@ -1910,6 +1921,221 @@ Por favor:
                 say(t('error_prefix', { error: e.message }));
             }
             return true;
+        }
+
+        // ── Plugin system ───────────────────────────────────────────────────
+        case '/plugin': {
+            const sub = args.split(/\s+/)[0]?.toLowerCase() || '';
+            const pluginArgs = args.split(/\s+/).slice(1).join(' ');
+
+            switch (sub) {
+                case 'add':
+                case 'install': {
+                    if (!pluginArgs) {
+                        sayBoxed({
+                            title: '  PLUGIN ADD',
+                            lines: [
+                                { text: '  Uso: /plugin add <source>', color: 'cyan' },
+                                { text: '', color: 'gray' },
+                                { text: '  Source puede ser:', color: 'white' },
+                                { text: '    GitHub shorthand:  yamadashy/repomix', color: 'gray' },
+                                { text: '    GitHub URL:        https://github.com/user/repo', color: 'gray' },
+                                { text: '    Local path:        ./my-plugin', color: 'gray' },
+                            ],
+                            borderColor: 'cyan',
+                        });
+                        return true;
+                    }
+                    say(`Instalando plugin "${pluginArgs}"...`);
+                    try {
+                        const result = await installPlugin(pluginArgs, { ctx });
+                        if (result.ok) {
+                            const p = result.plugin;
+                            const agCnt = (p.agents || []).length;
+                            const skCnt = (p.skills || []).length;
+                            const mcCnt = Object.keys(p.mcpServers || {}).length;
+                            sayBoxed({
+                                title: `  PLUGIN INSTALADO`,
+                                lines: [
+                                    { text: `  ${p.name}  v${p.version}`, color: 'green', bold: true },
+                                    { text: `  ${p.description || ''}`, color: 'gray' },
+                                    { text: '', color: 'gray' },
+                                    { text: `  Agents:  ${agCnt}`, color: 'cyan' },
+                                    { text: `  Skills:  ${skCnt}`, color: 'cyan' },
+                                    { text: `  MCPs:    ${mcCnt}`, color: 'cyan' },
+                                    { text: '', color: 'gray' },
+                                    { text: `  Usa /plugin activate ${p.name} para activarlo`, color: 'yellow' },
+                                    { text: `  Luego /plugin list para ver todos`, color: 'yellow' },
+                                ],
+                                borderColor: 'green',
+                            });
+                        } else {
+                            sayBoxed({
+                                title: '  ERROR DE INSTALACION',
+                                lines: [{ text: `  ${result.error}`, color: 'red' }],
+                                borderColor: 'red', titleColor: 'red',
+                            });
+                        }
+                    } catch (e) {
+                        say(`Error instalando plugin: ${e.message}`);
+                    }
+                    return true;
+                }
+
+                case 'remove':
+                case 'uninstall': {
+                    if (!pluginArgs) { say('Uso: /plugin remove <name>'); return true; }
+                    try {
+                        await uninstallPlugin(pluginArgs, { ctx });
+                        sayBoxed({
+                            title: '  PLUGIN ELIMINADO',
+                            lines: [
+                                { text: `  ${pluginArgs} fue desinstalado correctamente.`, color: 'green' },
+                                { text: `  Reinicia el agente para aplicar cambios.`, color: 'yellow' },
+                            ],
+                            borderColor: 'green',
+                        });
+                    } catch (e) {
+                        say(`Error desinstalando: ${e.message}`);
+                    }
+                    return true;
+                }
+
+                case 'activate': {
+                    if (!pluginArgs) { say('Uso: /plugin activate <name>'); return true; }
+                    try {
+                        const p = await activatePlugin(pluginArgs);
+                        sayBoxed({
+                            title: '  PLUGIN ACTIVADO',
+                            lines: [
+                                { text: `  ${p.name}  v${p.version}`, color: 'green', bold: true },
+                                { text: `  Usa /plugin list para confirmar.`, color: 'gray' },
+                                { text: `  Reinicia el agente para cargar los componentes.`, color: 'yellow' },
+                            ],
+                            borderColor: 'green',
+                        });
+                    } catch (e) {
+                        say(`Error activando: ${e.message}`);
+                    }
+                    return true;
+                }
+
+                case 'deactivate': {
+                    if (!pluginArgs) { say('Uso: /plugin deactivate <name>'); return true; }
+                    try {
+                        const p = await deactivatePlugin(pluginArgs);
+                        sayBoxed({
+                            title: '  PLUGIN DESACTIVADO',
+                            lines: [{ text: `  ${p.name} desactivado.`, color: 'yellow' }],
+                            borderColor: 'yellow', titleColor: 'yellow',
+                        });
+                    } catch (e) {
+                        say(`Error desactivando: ${e.message}`);
+                    }
+                    return true;
+                }
+
+                case 'info': {
+                    if (!pluginArgs) { say('Uso: /plugin info <name>'); return true; }
+                    const info = getPluginInfo(pluginArgs);
+                    if (!info) { say(`Plugin "${pluginArgs}" no encontrado.`); return true; }
+                    const agCnt = (info.agents || []).length;
+                    const skCnt = (info.skills || []).length;
+                    const mcCnt = Object.keys(info.mcpServers || {}).length;
+                    const lines = [
+                        { text: `  Nombre:      ${info.name}`, color: 'cyan' },
+                        { text: `  Version:     ${info.version}`, color: 'cyan' },
+                        { text: `  Autor:       ${info.author || 'desconocido'}`, color: 'gray' },
+                        { text: `  Descripcion: ${info.description || '-'}`, color: 'gray' },
+                        { text: '', color: 'gray' },
+                        { text: `  Agents:  ${agCnt}`, color: 'white', bold: true },
+                    ];
+                    for (const a of (info.agents || [])) {
+                        lines.push({ text: `    ${a.name}  -  ${a.description}`, color: 'gray' });
+                    }
+                    lines.push({ text: `  Skills:  ${skCnt}`, color: 'white', bold: true });
+                    for (const s of (info.skills || [])) {
+                        lines.push({ text: `    ${s.name}  -  ${s.description}`, color: 'gray' });
+                    }
+                    lines.push({ text: `  MCPs:    ${mcCnt}`, color: 'white', bold: true });
+                    for (const [k, v] of Object.entries(info.mcpServers || {})) {
+                        const shortKey = k.replace(/^[^_]+__/, '');
+                        lines.push({ text: `    ${shortKey}  -  ${v.command || v.url || '-'}`, color: 'gray' });
+                    }
+                    lines.push({ text: '', color: 'gray' });
+                    lines.push({ text: `  Estado:  ${info.active ? 'ACTIVO' : 'inactivo'}`, color: info.active ? 'green' : 'yellow', bold: true });
+                    sayBoxed({ title: `  PLUGIN: ${info.name}`, lines, borderColor: info.active ? 'green' : 'gray' });
+                    return true;
+                }
+
+                case 'marketplace':
+                case 'search': {
+                    const query = pluginArgs || '';
+                    try {
+                        const results = query ? await searchMarketplace(query) : await refreshMarketplaceIndex();
+                        if (!results || results.length === 0) {
+                            say(query ? `No se encontraron plugins para "${query}".` : 'Marketplace vacio.');
+                            return true;
+                        }
+                        const lines = [];
+                        for (const p of results) {
+                            lines.push({ text: `  ${p.name}  v${p.version}`, color: 'green', bold: true });
+                            lines.push({ text: `    ${p.description}`, color: 'gray' });
+                            const parts = [];
+                            if (p.agents) parts.push(`${p.agents.length} agents`);
+                            if (p.skills) parts.push(`${p.skills.length} skills`);
+                            if (p.mcpServers) parts.push(`${Object.keys(p.mcpServers).length} MCPs`);
+                            if (p.downloads) parts.push(`${p.downloads} downloads`);
+                            lines.push({ text: `    ${parts.join(' / ')}`, color: 'cyan' });
+                            if (p.repository) {
+                                lines.push({ text: `    /plugin add ${p.repository}`, color: 'yellow' });
+                            }
+                            lines.push({ text: '', color: 'gray' });
+                        }
+                        sayBoxed({ title: query ? `  MARKETPLACE: "${query}"` : '  MARKETPLACE', lines, borderColor: 'magenta', titleColor: 'magenta' });
+                    } catch (e) {
+                        say(`Error accediendo al marketplace: ${e.message}`);
+                    }
+                    return true;
+                }
+
+                case 'list':
+                default: {
+                    const plugins = listPlugins();
+                    if (plugins.length === 0) {
+                        sayBoxed({
+                            title: '  PLUGINS',
+                            lines: [
+                                { text: '  No hay plugins instalados.', color: 'gray' },
+                                { text: '', color: 'gray' },
+                                { text: '  /plugin marketplace     -  Buscar en el marketplace', color: 'cyan' },
+                                { text: '  /plugin add <source>   -  Instalar un plugin', color: 'cyan' },
+                                { text: '  /plugin search <query> -  Buscar plugins', color: 'cyan' },
+                            ],
+                            borderColor: 'gray',
+                        });
+                        return true;
+                    }
+                    const lines = [];
+                    for (const p of plugins) {
+                        const status = p.active ? '[ON]' : '[OFF]';
+                        const statusColor = p.active ? 'green' : 'gray';
+                        lines.push({ text: `  ${status}  ${p.name}  v${p.version}`, color: statusColor, bold: p.active });
+                        lines.push({ text: `          ${p.description || ''}`, color: 'gray' });
+                        const agCnt = (p.agents || []).length;
+                        const skCnt = (p.skills || []).length;
+                        const mcCnt = Object.keys(p.mcpServers || {}).length;
+                        lines.push({ text: `          ${agCnt}A / ${skCnt}S / ${mcCnt}M`, color: 'cyan' });
+                        lines.push({ text: '', color: 'gray' });
+                    }
+                    lines.push({ text: '  /plugin info <name>         -  Detalles', color: 'cyan' });
+                    lines.push({ text: '  /plugin activate <name>     -  Activar', color: 'cyan' });
+                    lines.push({ text: '  /plugin deactivate <name>   -  Desactivar', color: 'cyan' });
+                    lines.push({ text: '  /plugin remove <name>       -  Eliminar', color: 'cyan' });
+                    sayBoxed({ title: '  PLUGINS INSTALADOS', lines, borderColor: 'cyan' });
+                    return true;
+                }
+            }
         }
 
         default:

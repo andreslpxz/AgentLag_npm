@@ -117,6 +117,40 @@ export const ToolLine = ({ name, input, output, running }) => {
     );
 };
 
+// ── Salida con borde (boxed) ────────────────────────────────────────────────
+// Usado por /context, /debug, /plugin list, etc. en vez del texto plano con bullets.
+
+export const BoxedOutput = ({ title, lines, borderColor = 'gray', titleColor = 'white' }) => {
+    if (!lines || lines.length === 0) return null;
+    return (
+        <Box flexDirection="column" marginTop={1} marginBottom={1}
+             borderStyle="round" borderColor={borderColor} paddingX={2} paddingY={1}>
+            {title ? (
+                <Box>
+                    <Text color={titleColor} bold>{title}</Text>
+                </Box>
+            ) : null}
+            {lines.map((line, i) => {
+                if (typeof line === 'string') {
+                    return (
+                        <Box key={i}>
+                            <Text wrap="wrap">{line}</Text>
+                        </Box>
+                    );
+                }
+                // Soporta { text, color, bold } por linea
+                return (
+                    <Box key={i}>
+                        <Text color={line.color || 'white'} bold={line.bold || false} wrap="wrap">
+                            {line.text}
+                        </Text>
+                    </Box>
+                );
+            })}
+        </Box>
+    );
+};
+
 // ── Diálogo de confirmación ───────────────────────────────────────────────────
 
 export const ConfirmDialog = ({ toolName, detail, options, selectedIndex }) => (
