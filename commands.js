@@ -11,6 +11,7 @@ import {
 import { copyToClipboard, splitCommandArgs, runCommand } from './utils.js';
 import { clearSkillsCache, formatSkillsIndex, readSkill, listInstalledSkills } from './skills.js';
 import { loadMcpConfig } from './mcp_utils.js';
+import { addMcpServer, removeMcpServer } from './mcp_cli.js';
 import { isOllamaRunning } from './ollama_utils.js';
 import { getEvolutions, getLatestEvolution, removeEvolution } from './evolution_store.js';
 import { applyEvolution } from './evolution_engine.js';
@@ -135,6 +136,32 @@ export async function handleSlashCommand(trimmed, ctx) {
             const parts = args?.trim().split(/\s+/);
             const sub = parts?.[0]?.toLowerCase();
 
+            // /mcp remove <name> [--scope user|project]
+            if (sub === 'remove' || sub === 'rm') {
+                const name = parts[1];
+                if (!name) {
+                    say(t('cmd_mcp_usage_error', { sub }));
+                    return true;
+                }
+                // Detectar --scope
+                let scope = 'project';
+                const scopeIdx = parts.findIndex(p => p === '--scope');
+                if (scopeIdx !== -1 && parts[scopeIdx + 1]) scope = parts[scopeIdx + 1];
+                if (!['user', 'project'].includes(scope)) scope = 'project';
+                try {
+                    const res = removeMcpServer({ name, scope });
+                    if (res.removed) {
+                        say(`✅ Servidor MCP "${res.name}" eliminado del scope ${res.scope}.`);
+                        rebuildAgentWith();
+                    } else {
+                        say(`⚠ No se encontró "${res.name}" en el scope ${res.scope}.`);
+                    }
+                } catch (e) {
+                    say(t('error_prefix', { error: e.message }));
+                }
+                return true;
+            }
+
             if (sub === 'add' || sub === 'add-json') {
                 const name = parts[1];
                 if (!name) {
@@ -150,6 +177,7 @@ export async function handleSlashCommand(trimmed, ctx) {
                 if (scopeMatch) {
                     scope = scopeMatch[1];
                 }
+                if (!['user', 'project'].includes(scope)) scope = 'project';
 
                 if (sub === 'add-json') {
                     let jsonStr = scopeMatch ? remainder.replace(scopeMatch[0], '').trim() : remainder.trim();
@@ -180,26 +208,12 @@ export async function handleSlashCommand(trimmed, ctx) {
                 }
 
                 try {
-                    const configDir = scope === 'user'
-                        ? path.join(os.homedir(), '.agentlag')
-                        : path.join(process.cwd(), '.agentlag');
-                    const configPath = path.join(configDir, 'mcp.json');
-
-                    if (!fs.existsSync(configDir)) fs.mkdirSync(configDir, { recursive: true });
-
-                    let mcpConfig = { mcpServers: {} };
-                    if (fs.existsSync(configPath)) {
-                        mcpConfig = JSON.parse(fs.readFileSync(configPath, 'utf8'));
-                    }
-
-                    mcpConfig.mcpServers[name] = serverConfig;
-                    fs.writeFileSync(configPath, JSON.stringify(mcpConfig, null, 2));
-
+                    addMcpServer({ name, server: serverConfig, scope });
                     say(t('cmd_mcp_added', { name, scope }));
                     rebuildAgentWith();
                     return true;
                 } catch (e) {
-                say(t('error_prefix', { error: e.message }));
+                    say(t('error_prefix', { error: e.message }));
                     return true;
                 }
             }

@@ -12,6 +12,22 @@ import { spawn } from 'child_process';
 import fs   from 'fs';
 import path from 'path';
 import { t, getAvailableLanguages, setLanguage } from './i18n.js';
+import { runMcpCli } from './mcp_cli.js';
+
+// ─── Router de subcomandos (fuera de la TUI) ─────────────────────────────────
+// Permite invocar utilidades desde fuera de la interfaz interactiva:
+//
+//   agentlag mcp add playwright npx @playwright/mcp@latest
+//   agentlag mcp list
+//   agentlag mcp remove playwright
+//
+// Si el primer argumento es un subcomando conocido, lo ejecutamos y salimos sin
+// arrancar la TUI. Si no, arrancamos la app React/Ink como siempre.
+const _cliArgs = process.argv.slice(2);
+if (_cliArgs.length > 0 && _cliArgs[0] === 'mcp') {
+    const code = runMcpCli(_cliArgs.slice(1));
+    process.exit(code ?? 0);
+}
 
 // Módulos propios
 import { loadConfig, saveConfig, clearLatestSession, saveSession } from './session.js';
