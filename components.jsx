@@ -26,34 +26,67 @@ export const HR_FULL = () => {
 
 // ── Branding ──────────────────────────────────────────────────────────────────
 
-export const AgentLogo = () => (
-    <Box flexDirection="column">
-        <Text color="#00FF87"> ▄▀▄ █▀▀ █▀▀ █▄ █ ▀█▀ █   ▄▀▄ █▀▀ </Text>
-        <Text color="#00FF87"> █▀█ █ █ █▀▀ █ ▀█  █  █   █▀█ █ █ </Text>
-        <Text color="#00FF87"> ▀ ▀ ▀▀▀ ▀▀▀ ▀  ▀  ▀  ▀▀▀ ▀ ▀ ▀▀▀ </Text>
-        <Box>
-            <Text color="white" bold>  AGENTLAG</Text>
-            <Text color="gray">  v{AGENTLAG_VERSION}</Text>
+// Paletas por variante. Cada variante está pensada para verse bien sobre el
+// fondo que le da nombre, para que el menú de ColorScreen pueda previsualizar.
+const LOGO_VARIANTS = {
+    brand:  { art: '#00FF87', label: 'white', version: 'gray' },   // verde neón (default)
+    auto:   { art: '#00FF87', label: 'white', version: 'gray' },   // alias de brand
+    dark:   { art: '#5af7ff', label: 'white', version: 'gray' },   // cian brillante sobre fondo oscuro
+    light:  { art: '#0a7d8c', label: 'black', version: 'gray' },   // cian oscuro sobre fondo claro
+    ansi:   { art: 'cyan',    label: 'white', version: 'gray' },   // solo ANSI básico de 8 colores
+};
+
+/**
+ * Logo ASCII de AgentLag.
+ *
+ * Cada línea del arte vive en su propio <Box> (en vez de <Text> sueltos) porque
+ * en algunas combinaciones de Ink + terminal los <Text> directos dentro de un
+ * <Box flexDirection="column"> acababan alineándose horizontalmente y rompiendo
+ * el banner. Envolver cada línea en un <Box> fuerza una fila por línea y es
+ * robusto frente a ese bug.
+ *
+ * @param {'brand'|'auto'|'dark'|'light'|'ansi'} variant  Paleta a usar.
+ */
+export const AgentLogo = ({ variant = 'brand' }) => {
+    const palette = LOGO_VARIANTS[variant] || LOGO_VARIANTS.brand;
+    const lines = [
+        ' ▄▀▄ █▀▀ █▀▀ █▄ █ ▀█▀ █   ▄▀▄ █▀▀ ',
+        ' █▀█ █ █ █▀▀ █ ▀█  █  █   █▀█ █ █ ',
+        ' ▀ ▀ ▀▀▀ ▀▀▀ ▀  ▀  ▀  ▀▀▀ ▀ ▀ ▀▀▀ ',
+    ];
+    return (
+        <Box flexDirection="column">
+            {lines.map((l, i) => (
+                <Box key={i}>
+                    <Text color={palette.art}>{l}</Text>
+                </Box>
+            ))}
+            <Box>
+                <Text color={palette.label} bold>  AGENTLAG</Text>
+                <Text color={palette.version}>  v{AGENTLAG_VERSION}</Text>
+            </Box>
         </Box>
-    </Box>
-);
+    );
+};
 
 export const WelcomeBox = ({ provider, model, userName }) => (
     <Box flexDirection="column" borderStyle="round" borderColor="gray"
          paddingX={2} paddingY={1} marginBottom={1}>
-        <Box>
+        <Box marginBottom={1}>
             {userName ? (
                 <Text bold>{t('welcome_user', { name: userName })}</Text>
             ) : (
                 <Text bold>{t('welcome')}</Text>
             )}
         </Box>
-        <Newline />
-        <AgentLogo />
-        <Newline />
-        <Text bold>AgentLag</Text>
-        <Text color="gray">{model || 'model'} · {provider || 'provider'}</Text>
-        <Text color="cyan">{process.cwd()}</Text>
+        <Box marginBottom={1}>
+            <AgentLogo />
+        </Box>
+        <Box flexDirection="column">
+            <Text bold>AgentLag</Text>
+            <Text color="gray">{model || 'model'} · {provider || 'provider'}</Text>
+            <Text color="cyan">{process.cwd()}</Text>
+        </Box>
     </Box>
 );
 
@@ -183,11 +216,16 @@ export const ShortcutsHelp = () => (
 
 export const ColorScreen = ({ menuIndex }) => {
     const opts = [t('color_auto'), t('color_dark'), t('color_light'), t('color_ansi')];
+    // Mapea el índice seleccionado a la variante de paleta que se previsualiza.
+    // Así, al mover ↑↓ por el menú, el logo de arriba cambia en vivo para que
+    // el usuario vea cómo se vería el banner con cada estilo antes de confirmar.
+    const variants = ['auto', 'dark', 'light', 'ansi'];
+    const activeVariant = variants[menuIndex] || 'auto';
     return (
         <Box flexDirection="column" paddingX={1} paddingY={1}>
             <Text color="gray">{t('welcome')} v{AGENTLAG_VERSION}</Text>
             <Text color="gray">{'…'.repeat(69)}</Text><Newline />
-            <AgentLogo />
+            <AgentLogo variant={activeVariant} />
             <Text color="gray">{'─'.repeat(69)}</Text><Newline />
             <Text>{t('lets_get_started')}</Text><Newline />
             <Text color="gray"> {t('choose_style')}</Text><Newline />

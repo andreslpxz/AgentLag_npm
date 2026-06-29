@@ -1,14 +1,15 @@
 {
   "name": "@dryink/agentlag",
-  "version": "1.1.10",
+  "version": "1.1.11",
   "description": "your intelligent agent CLI",
   "type": "module",
   "bin": {
-    "agentlag": "./cli.jsx"
+    "agentlag": "./bin/agentlag.jsx"
   },
   "files": [
     "*.js",
     "*.jsx",
+    "bin/",
     "public/"
   ],
   "license": "MIT",
