@@ -128,3 +128,42 @@ export function extractFailedGeneration(err) {
         return null;
     }
 }
+
+/**
+ * Detecta si el error es un rate limit (429) recuperable con retry.
+ */
+export function isRateLimitError(err) {
+    const text = flattenErrorText(err).toLowerCase();
+    const status = err?.status || err?.statusCode || err?.response?.status || err?.response?.statusCode;
+    return (
+        status === 429 ||
+        text.includes('rate limit') ||
+        text.includes('rate_limit') ||
+        text.includes('too many requests') ||
+        text.includes('429 provider returned error')
+    );
+}
+
+/**
+ * Ejecuta una funcion asincrona con retry y backoff exponencial.
+ * Util para errores 429 de proveedores con rate limits estrictos (OpenRouter free, etc.).
+ */
+export async function withRetry(fn, { maxRetries = 3, baseDelay = 2000, shouldRetry } = {}) {
+    let lastErr;
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+        try {
+            return await fn();
+        } catch (err) {
+            lastErr = err;
+            if (attempt >= maxRetries) break;
+            if (shouldRetry && !shouldRetry(err)) throw err;
+            if (!shouldRetry && !isRateLimitError(err)) throw err;
+            const retryAfter = err?.response?.headers?.['retry-after'];
+            const delay = retryAfter
+                ? Math.max(1000, parseInt(retryAfter, 10) * 1000)
+                : baseDelay * Math.pow(2, attempt) + Math.random() * 1000;
+            await new Promise(r => setTimeout(r, delay));
+        }
+    }
+    throw lastErr;
+}

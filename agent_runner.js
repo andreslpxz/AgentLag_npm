@@ -9,7 +9,7 @@ import { buildAgent, stripMarkdown, trySalvageToolCall, messageText } from './ag
 import { RecordingSession } from './recording_logger.js';
 import { analyzeAndEvolve } from './evolution_engine.js';
 import { addEvolution } from './evolution_store.js';
-import { isToolUnsupportedError, extractFailedGeneration } from './utils.js';
+import { isToolUnsupportedError, extractFailedGeneration, isRateLimitError } from './utils.js';
 import { t } from './i18n.js';
 
 export const SPINNERS       = ['✻', '✼', '✽', '✾', '✿'];
@@ -256,10 +256,14 @@ async function _handleAgentError(err, agent, msgRef, setStaticHistory, setStatus
         } catch (e) {
             if (e?.message?.includes('Recursion limit')) {
                 setStaticHistory(prev => [...prev, { type: 'assistant', text: t('recursion_limit_react') }]);
+            } else if (isRateLimitError(e)) {
+                setStaticHistory(prev => [...prev, { type: 'assistant', text: `\u26a0\ufe0f Rate limit alcanzado. El modelo gratuito tiene request limits estrictos. Espera unos segundos e intenta de nuevo.` }]);
             } else {
                 setStaticHistory(prev => [...prev, { type: 'assistant', text: t('critical_react_error', { error: e?.message || e }) }]);
             }
         }
+    } else if (isRateLimitError(err)) {
+        setStaticHistory(prev => [...prev, { type: 'assistant', text: `\u26a0\ufe0f Rate limit del proveedor. Espera unos segundos e intenta de nuevo.` }]);
     } else {
         setStaticHistory(prev => [...prev, { type: 'assistant', text: `❌ Error: ${err?.message || err}` }]);
     }

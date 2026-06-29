@@ -31,6 +31,7 @@ import {
 } from "@langchain/core/messages";
 import { z } from "zod";
 import { stripMarkdown, messageText } from "./agent.js";
+import { withRetry } from "./utils.js";
 
 const MAX_ITERATIONS = 8;   // hard cap — prevents runaway loops
 
@@ -108,10 +109,13 @@ function buildClassifierChain(llm) {
         RunnableLambda.from(async (input) => {
             const { tools, history, userMessage } = input;
             const prompt = buildClassifierPrompt(tools, history, userMessage);
-            const response = await llm.invoke([
-                new SystemMessage("You are a strict JSON-only tool classifier. You output ONLY valid JSON, no prose, no markdown fences."),
-                new HumanMessage(prompt),
-            ]);
+            const response = await withRetry(
+                () => llm.invoke([
+                    new SystemMessage("You are a strict JSON-only tool classifier. You output ONLY valid JSON, no prose, no markdown fences."),
+                    new HumanMessage(prompt),
+                ]),
+                { maxRetries: 3, baseDelay: 2000 }
+            );
             return { rawResponse: response, ...input };
         }),
         // Step 2: parse the LLM's response as strict JSON
@@ -202,7 +206,10 @@ function buildSynthesizer(llm, systemPromptText) {
                 ...history,
                 new HumanMessage(userMessage),
             ];
-            const response = await llm.invoke(messages);
+            const response = await withRetry(
+                () => llm.invoke(messages),
+                { maxRetries: 3, baseDelay: 2000 }
+            );
             return response;
         }
 
@@ -226,7 +233,10 @@ If the user might need another tool to fully complete their task, you may say so
             ...history,
             new HumanMessage(synthPrompt),
         ];
-        const response = await llm.invoke(messages);
+        const response = await withRetry(
+                () => llm.invoke(messages),
+                { maxRetries: 3, baseDelay: 2000 }
+            );
 
         // If the response looks like it wants another tool, the outer loop will
         // re-classify. Otherwise we return the synthesized answer.
@@ -355,14 +365,19 @@ export function buildOrchestratorAgent(llm, allTools, systemPromptText, session)
         return { messages: [...messages, ...emittedMessages] };
     };
 
-    // ── stream() — emits chunks as the orchestrator works ────────────────
+    // ── stream() — emits chunks compatible with LangGraph _streamAgent ─────
+    // _streamAgent expects chunks shaped as { agent: { messages: [...] } }
+    // or { tools: { messages: [...] } }, NOT flat { messages: [...] }.
     const stream = async function* (input, options = {}) {
-        // We can't truly stream the LLM tokens here (that would require
-        // deeper integration), but we CAN emit structured chunks at each
-        // phase boundary so the UI shows progress.
         const result = await invoke(input, options);
         for (const msg of result.messages.slice((input.messages || []).length)) {
-            yield { messages: [msg] };
+            // AIMessages → chunk.agent (so UI shows thinking/tool-call status)
+            // ToolMessages → chunk.tools (so UI shows tool results)
+            if (msg._getType?.() === 'tool') {
+                yield { tools: { messages: [msg] } };
+            } else {
+                yield { agent: { messages: [msg] } };
+            }
         }
     };
 

@@ -52,7 +52,7 @@ const AgentState = Annotation.Root({
 });
 
 // ─── Crear LLM según proveedor ────────────────────────────────────────────────
-async function createLLM(provider, model, apiKey, baseUrl, effortLevel) {
+async function createLLM(provider, model, apiKey, baseUrl, effortLevel, { toolsEnabled = true } = {}) {
     const info = getModelInfo(model);
     const commonOpts = {
         temperature: 0.4,
@@ -250,7 +250,7 @@ async function createLLM(provider, model, apiKey, baseUrl, effortLevel) {
         }
         case "openrouter": {
             const { ChatOpenAI } = await import("@langchain/openai");
-            llm = new ChatOpenAI({
+            const openRouterOpts = {
                 model,
                 apiKey: apiKey || process.env.OPENROUTER_API_KEY,
                 configuration: {
@@ -262,11 +262,15 @@ async function createLLM(provider, model, apiKey, baseUrl, effortLevel) {
                 },
                 temperature: 0.4,
                 maxTokens: 8192,
-                // Pide a OpenRouter rutar solo a providers que soporten function-calling.
-                modelKwargs: {
+            };
+            // Solo pedir providers con function-calling cuando tools están habilitadas.
+            // En modo ReAct/Orchestrator esto causaría 404 para modelos que no soportan tools.
+            if (toolsEnabled) {
+                openRouterOpts.modelKwargs = {
                     provider: { require_parameters: true },
-                },
-            });
+                };
+            }
+            llm = new ChatOpenAI(openRouterOpts);
             break;
         }
         case "lightning": {
@@ -677,7 +681,7 @@ export async function buildAgent(overrides = {}) {
         allTools = allTools.filter(t => !overrides.excludedTools.includes(t.name));
     }
 
-    const llm = await createLLM(provider, model, apiKey, baseUrl, effortLevel);
+    const llm = await createLLM(provider, model, apiKey, baseUrl, effortLevel, { toolsEnabled: !forceReAct });
 
     // ─── Orchestrator mode (replaces legacy ReAct) ───────────────────────────
     // When forceReAct is on, we now use the Orchestrator: a strict JSON-Schema
