@@ -126,6 +126,7 @@ export async function handleSlashCommand(trimmed, ctx) {
         msgRef, historyRef, currentConversationRef,
         totalTokens, effortLevel, setEffortLevel,
         focusMode, setFocusMode, forceReAct, setForceReAct,
+        streamMode, setStreamMode,
         advisorEnabled, setAdvisorEnabled, setAgent,
         schedulerRef, lastError, setLastError,
     } = ctx;
@@ -2188,21 +2189,20 @@ Por favor:
         }
 
         case '/stream': {
-            // /stream <texto>  →  ejecuta el texto con streaming token-a-token.
-            // Si no hay texto, mostramos uso.
-            if (!args) {
-                say(t('cmd_stream_usage'));
-                return true;
+            // /stream es un MODO toggle (como /react). Cuando está activado,
+            // los mensajes normales (no slash) se ejecutan con streaming
+            // token-a-token en lugar del flujo normal con tools.
+            //
+            // No acepta argumentos: solo activa/desactiva el modo.
+            // Si el usuario escribe "/stream <texto>", lo tratamos como toggle
+            // (igual que haría /react) — el texto se ignora con un aviso.
+            if (args) {
+                say(`ℹ /stream es un modo (toggle), no acepta mensaje. Activa el modo con solo /stream y luego escribe tu mensaje normal.`);
             }
-            // runStreamTurn está importado abajo para evitar ciclo en módulos.
-            const { runStreamTurn } = await import('./agent_runner.js');
-            // Ejecutar asincronamente — no bloquear el handler.
-            runStreamTurn(args, {
-                cfg, msgRef, historyRef, currentConversationRef,
-                setStaticHistory, setStatus, setActiveTool,
-                setThinkWord, setThinkStart, setElapsed,
-                abortCtrlRef, setLastError,
-            });
+            const next = !streamMode;
+            setStreamMode(next);
+            persistFlag('streamMode', next);
+            say(next ? t('cmd_stream_on') : t('cmd_stream_off'));
             return true;
         }
 
