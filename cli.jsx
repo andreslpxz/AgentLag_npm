@@ -91,6 +91,9 @@ const App = ({ config: initCfg }) => {
     // Refs to read fresh values inside useInput without stale closures.
     const inputRef = useRef('');
     const cursorPosRef = useRef(0);
+    // Texto en streaming (se renderiza en la zona activa, no en <Static>,
+    // porque <Static> congela los items tras renderizarlos una vez).
+    const [streamingText, setStreamingText] = useState('');
     const schedulerRef = useRef(null);
     if (!schedulerRef.current) {
         schedulerRef.current = new Scheduler(async (p) => {
@@ -271,6 +274,7 @@ const App = ({ config: initCfg }) => {
         setScreen, setMenuIndex, setFormInput,
         setStaticHistory, setStatus, setActiveTool,
         setThinkWord, setThinkStart, setElapsed, setTotalTokens,
+        setStreamingText,
         abortCtrlRef, askConfirm,
         msgRef, historyRef, currentConversationRef,
         totalTokens, effortLevel, setEffortLevel,
@@ -566,6 +570,7 @@ const App = ({ config: initCfg }) => {
                         msgRef,
                         setStaticHistory, setStatus, setActiveTool,
                         setThinkWord, setThinkStart, setElapsed,
+                        setStreamingText,
                         abortCtrlRef, setLastError,
                     });
                 } else {
@@ -715,6 +720,19 @@ const App = ({ config: initCfg }) => {
                         <Text color="yellow">{spinner} </Text>
                         <Text color="yellow">{thinkWord}…</Text>
                         <Text color="gray">{timeStr}{tokenStr}</Text>
+                    </Box>
+                )}
+
+                {/* Texto en streaming token-a-token — se renderiza aquí, NO en <Static>,
+                    porque <Static> congela cada item tras renderizarlo una vez y por eso
+                    solo aparecía el primer token. */}
+                {streamingText && !pendingConfirm && (
+                    <Box marginTop={1} flexDirection="column">
+                        <Box>
+                            <Text color="emerald" bold>● </Text>
+                            <Text>{streamingText}</Text>
+                            <Text color="gray">▋</Text>
+                        </Box>
                     </Box>
                 )}
 

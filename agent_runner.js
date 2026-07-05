@@ -288,6 +288,7 @@ export async function runStreamTurn(msg, ctx) {
         msgRef,
         setStaticHistory, setStatus, setActiveTool,
         setThinkWord, setThinkStart, setElapsed,
+        setStreamingText,
         abortCtrlRef, setLastError,
     } = ctx;
 
@@ -318,7 +319,13 @@ export async function runStreamTurn(msg, ctx) {
         return;
     }
 
+    // IMPORTANTE: El user message se mete en staticHistory, PERO el texto
+    // streaming va a `streamingText` (estado separado que se renderiza en la
+    // zona activa, no en <Static>). Esto es porque <Static> congela cada item
+    // tras renderizarlo una vez: si metemos el texto streaming ahí, solo se
+    // vería el primer token (bug real que tuvimos).
     setStaticHistory(prev => [...prev, { type: 'user', text: msg }]);
+    setStreamingText('');  // limpiar por si quedó de antes
     setThinkWord(t('think_1')); setThinkStart(Date.now()); setElapsed(0);
     setStatus('thinking'); setActiveTool(null);
 
@@ -347,32 +354,9 @@ export async function runStreamTurn(msg, ctx) {
 
     abortCtrlRef.current = new AbortController();
 
-    // Mensaje streaming inicial (vacío, iremos actualizando)
-    const appendChunk = (chunkText) => {
-        if (!chunkText) return;
-        setStaticHistory(prev => {
-            // Si el último item es un assistant streaming, anexar; si no, crear.
-            const last = prev[prev.length - 1];
-            if (last && last.type === 'assistant' && last.streaming === true) {
-                const next = [...prev];
-                next[next.length - 1] = { ...last, text: last.text + chunkText };
-                return next;
-            }
-            return [...prev, { type: 'assistant', text: chunkText, streaming: true }];
-        });
-    };
-    const finalizeStreamMsg = () => {
-        setStaticHistory(prev => {
-            const last = prev[prev.length - 1];
-            if (last && last.type === 'assistant' && last.streaming === true) {
-                const next = [...prev];
-                next[next.length - 1] = { ...last, streaming: false };
-                return next;
-            }
-            return prev;
-        });
-    };
-
+    // Acumulador local para el texto completo. Actualizamos streamingText con
+    // cada chunk — como streamingText es estado normal de React (no pasa por
+    // <Static>), se re-renderiza en cada token correctamente.
     let fullText = '';
     try {
         const cfg = loadConfig();
@@ -386,22 +370,31 @@ export async function runStreamTurn(msg, ctx) {
             const piece = messageText(chunk);
             if (piece) {
                 fullText += piece;
-                appendChunk(piece);
+                setStreamingText(fullText);
             }
         }
-        finalizeStreamMsg();
+        // Stream terminado: mover el texto a staticHistory y limpiar streamingText.
         if (fullText) {
+            const cleaned = stripMarkdown(fullText);
+            setStaticHistory(prev => [...prev, { type: 'assistant', text: cleaned }]);
             msgRef.current = [...msgRef.current, new AIMessage(fullText)];
         }
+        setStreamingText('');
     } catch (err) {
-        finalizeStreamMsg();
+        // Si había texto parcial, preservarlo en staticHistory.
+        if (fullText) {
+            const cleaned = stripMarkdown(fullText);
+            setStaticHistory(prev => [...prev, { type: 'assistant', text: cleaned + '\n\n[streaming interrumpido]' }]);
+            msgRef.current = [...msgRef.current, new AIMessage(fullText)];
+        }
+        setStreamingText('');
         if (err?.name === 'AbortError' || /aborted/i.test(err?.message || '')) {
             setStaticHistory(prev => [...prev, { type: 'assistant', text: t('execution_cancelled_user') }]);
         } else {
             if (setLastError) setLastError(err);
             // Detectar errores típicos de "streaming no soportado"
-            const msg = (err?.message || '').toLowerCase();
-            if (msg.includes('stream') || msg.includes('not supported') || msg.includes('does not support')) {
+            const errMsg = (err?.message || '').toLowerCase();
+            if (errMsg.includes('stream') || errMsg.includes('not supported') || errMsg.includes('does not support')) {
                 setStaticHistory(prev => [...prev, {
                     type: 'assistant',
                     text: `⚠ El proveedor no admite streaming de tokens: ${err.message}\nUsa el modo normal (sin /stream).`
@@ -412,6 +405,7 @@ export async function runStreamTurn(msg, ctx) {
         }
     } finally {
         setStatus('idle'); setActiveTool(null); setThinkStart(null); setElapsed(0);
+        setStreamingText('');
     }
 }
 
