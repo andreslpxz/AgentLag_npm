@@ -725,14 +725,25 @@ const App = ({ config: initCfg }) => {
 
                 {/* Texto en streaming token-a-token — se renderiza aquí, NO en <Static>,
                     porque <Static> congela cada item tras renderizarlo una vez y por eso
-                    solo aparecía el primer token. */}
+                    solo aparecía el primer token.
+                    Throttled a 50ms en agent_runner.js para evitar flicker/parpadeo. */}
                 {streamingText && !pendingConfirm && (
                     <Box marginTop={1} flexDirection="column">
-                        <Box>
-                            <Text color="emerald" bold>● </Text>
-                            <Text>{streamingText}</Text>
-                            <Text color="gray">▋</Text>
-                        </Box>
+                        {(() => {
+                            // Render multilínea como AssistantMessage, con wrap="wrap"
+                            // para que el texto no desborde el ancho de la terminal.
+                            const lines = streamingText.split('\n');
+                            return lines.map((line, i) => (
+                                <Box key={i}>
+                                    {i === 0
+                                        ? <Text color="green" bold>● </Text>
+                                        : <Text>  </Text>}
+                                    <Text wrap="wrap">{line}</Text>
+                                    {/* Cursor solo en la última línea */}
+                                    {i === lines.length - 1 && <Text color="gray">▋</Text>}
+                                </Box>
+                            ));
+                        })()}
                     </Box>
                 )}
 
