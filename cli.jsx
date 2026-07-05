@@ -36,7 +36,7 @@ import { PROVIDERS, PROVIDER_MODELS }   from './providers.js';
 import { SLASH_COMMANDS, handleSlashCommand, EFFORT_LEVELS, AGENTLAG_VERSION } from './commands.js';
 import {
     SPINNERS, NEEDS_CONFIRM, randWord,
-    runAgentTurn, downloadHFModel,
+    runAgentTurn, runStreamTurn, downloadHFModel,
 } from './agent_runner.js';
 import {
     HR, LanguageScreen, WelcomeBox, UserMessage, AssistantMessage, ToolLine, ConfirmDialog,
@@ -121,6 +121,7 @@ const App = ({ config: initCfg }) => {
     const [effortLevel,    setEffortLevel]    = useState(initCfg.effort || 'high');
     const [advisorEnabled, setAdvisorEnabled] = useState(!!initCfg.advisor);
     const [forceReAct,     setForceReAct]     = useState(!!initCfg.forceReAct);
+    const [streamMode,     setStreamMode]     = useState(!!initCfg.streamMode);
     const abortCtrlRef = useRef(null);
 
     // ── Layout ────────────────────────────────────────────────────────────────
@@ -275,9 +276,10 @@ const App = ({ config: initCfg }) => {
         totalTokens, effortLevel, setEffortLevel,
         focusMode, setFocusMode,
         forceReAct, setForceReAct,
+        streamMode, setStreamMode,
         advisorEnabled, setAdvisorEnabled,
         agent, setAgent, schedulerRef,
-        selProvider, runAgentTurn,
+        selProvider, runAgentTurn, runStreamTurn,
         lastError, setLastError,
     };
 
@@ -557,14 +559,25 @@ const App = ({ config: initCfg }) => {
                 }
 
                 setInputAt('', 0); setCmdIndex(0);
-                runAgentTurn(trimmed, {
-                    agent, msgRef,
-                    setStaticHistory, setStatus, setActiveTool,
-                    setThinkWord, setThinkStart, setElapsed, setTotalTokens,
-                    abortCtrlRef, askConfirm,
-                    setAgent, setForceReAct, persistFlag,
-                    setLastError,
-                });
+                // Si /stream está activado (modo toggle como /react), usar streaming
+                // token-a-token en lugar del flujo normal con tools.
+                if (streamMode) {
+                    runStreamTurn(trimmed, {
+                        msgRef,
+                        setStaticHistory, setStatus, setActiveTool,
+                        setThinkWord, setThinkStart, setElapsed,
+                        abortCtrlRef, setLastError,
+                    });
+                } else {
+                    runAgentTurn(trimmed, {
+                        agent, msgRef,
+                        setStaticHistory, setStatus, setActiveTool,
+                        setThinkWord, setThinkStart, setElapsed, setTotalTokens,
+                        abortCtrlRef, askConfirm,
+                        setAgent, setForceReAct, persistFlag,
+                        setLastError,
+                    });
+                }
             })();
             return;
         }
@@ -746,6 +759,7 @@ const App = ({ config: initCfg }) => {
                         <Text color="gray"> {effortLevel} · /effort</Text>
                         {focusMode      && <Text color="magenta"> · {t('focus')}</Text>}
                         {forceReAct     && <Text color="yellow">  · {t('react')}</Text>}
+                        {streamMode     && <Text color="blue">     · {t('stream')}</Text>}
                         {advisorEnabled && <Text color="cyan">   · {t('advisor')}</Text>}
                     </Box>
                 )}
