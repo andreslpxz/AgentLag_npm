@@ -354,10 +354,26 @@ export async function runStreamTurn(msg, ctx) {
 
     abortCtrlRef.current = new AbortController();
 
-    // Acumulador local para el texto completo. Actualizamos streamingText con
-    // cada chunk — como streamingText es estado normal de React (no pasa por
-    // <Static>), se re-renderiza en cada token correctamente.
+    // Acumulador local para el texto completo.
+    //
+    // THROTTLING: No actualizamos streamingText en cada token (pueden ser
+    // 50+ por segundo). Eso causaba parpadeo/flicker porque cada setStreamingText
+    // dispara un re-render del componente App entero, y Ink tiene que re-escribir
+    // toda la pantalla — incluyendo <Static> — lo que hace que la pantalla "salte"
+    // hacia arriba y vuelva.
+    //
+    // Solución: flushear a streamingText cada 50ms como máximo. El último chunk
+    // siempre se flushea al terminar el stream.
     let fullText = '';
+    let lastFlush = 0;
+    const FLUSH_INTERVAL_MS = 50;
+    const flush = (force = false) => {
+        const now = Date.now();
+        if (force || now - lastFlush >= FLUSH_INTERVAL_MS) {
+            setStreamingText(fullText);
+            lastFlush = now;
+        }
+    };
     try {
         const cfg = loadConfig();
         const provider = cfg.provider || 'groq';
@@ -370,9 +386,10 @@ export async function runStreamTurn(msg, ctx) {
             const piece = messageText(chunk);
             if (piece) {
                 fullText += piece;
-                setStreamingText(fullText);
+                flush();  // throttled — solo actualiza si pasaron 50ms
             }
         }
+        flush(true);  // forzar flush del texto completo al terminar
         // Stream terminado: mover el texto a staticHistory y limpiar streamingText.
         if (fullText) {
             const cleaned = stripMarkdown(fullText);
