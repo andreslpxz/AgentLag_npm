@@ -6,118 +6,237 @@
     <title>AgentLag Web</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/dompurify@3/dist/purify.min.js"></script>
     <style>
+        html, body { height: 100%; }
+        body { font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
         .chat-container { height: calc(100vh - 160px); }
-        .sidebar { width: 260px; }
-        pre { background: #1e1e1e; color: #d4d4d4; padding: 1rem; border-radius: 0.5rem; overflow-x: auto; }
+        .sidebar { width: 260px; min-width: 260px; }
+        pre { background: #1a1a1a; color: #d4d4d4; padding: 0.75rem 1rem; border-radius: 0.5rem; overflow-x: auto; font-family: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace; font-size: 0.85rem; }
+        code:not(pre code) { background: #2a2a2a; padding: 0.1rem 0.35rem; border-radius: 0.25rem; font-size: 0.85em; color: #f59e0b; }
         .thinking { animation: pulse 1.5s infinite; }
-        @keyframes pulse {
-            0% { opacity: 0.4; }
-            50% { opacity: 1; }
-            100% { opacity: 0.4; }
-        }
+        @keyframes pulse { 0%,100% { opacity: 0.4; } 50% { opacity: 1; } }
+        .prose pre { margin: 0.5rem 0; }
+        .prose p { margin: 0.4rem 0; line-height: 1.5; }
+        .prose ul, .prose ol { margin: 0.4rem 0; padding-left: 1.5rem; }
+        .prose li { margin: 0.2rem 0; }
+        .prose h1, .prose h2, .prose h3 { font-weight: 600; margin: 0.6rem 0 0.3rem; }
+        .prose h1 { font-size: 1.2rem; }
+        .prose h2 { font-size: 1.1rem; }
+        .prose h3 { font-size: 1.05rem; }
+        .prose a { color: #34d399; text-decoration: underline; }
+        .prose table { border-collapse: collapse; margin: 0.5rem 0; }
+        .prose th, .prose td { border: 1px solid #444; padding: 0.3rem 0.6rem; }
+        .scrollbar::-webkit-scrollbar { width: 6px; height: 6px; }
+        .scrollbar::-webkit-scrollbar-thumb { background: #444; border-radius: 3px; }
+        .scrollbar::-webkit-scrollbar-track { background: transparent; }
+        .tab-active { background: rgba(255,255,255,0.08); color: #fff; }
+        .tab-inactive { color: #888; }
     </style>
 </head>
-<body class="bg-[#212121] text-gray-200 flex">
+<body class="bg-[#1a1a1a] text-gray-200 flex">
+
     <!-- Sidebar -->
-    <div class="sidebar bg-[#171717] h-screen flex flex-col p-2 border-r border-white/10">
-        <button onclick="newChat()" class="flex items-center gap-3 px-3 py-3 border border-white/20 rounded-md hover:bg-white/5 transition mb-2">
+    <div class="sidebar bg-[#141414] h-screen flex flex-col p-2 border-r border-white/10">
+        <button onclick="newChat()" class="flex items-center gap-3 px-3 py-2.5 border border-white/15 rounded-md hover:bg-white/5 transition mb-2 text-sm">
             <i class="fas fa-plus"></i> Nueva conversación
         </button>
-        <div id="conversations-list" class="flex-1 overflow-y-auto space-y-1">
-            <!-- List will be populated here -->
+
+        <div class="flex gap-1 mb-2 text-xs">
+            <button onclick="switchTab('chats')" id="tab-chats" class="flex-1 py-1.5 rounded tab-active">Chats</button>
+            <button onclick="switchTab('mcp')" id="tab-mcp" class="flex-1 py-1.5 rounded tab-inactive">MCP</button>
+            <button onclick="switchTab('skills')" id="tab-skills" class="flex-1 py-1.5 rounded tab-inactive">Skills</button>
         </div>
-        <div class="p-2 border-t border-white/10 space-y-1">
+
+        <div id="conversations-list" class="flex-1 overflow-y-auto space-y-1 scrollbar"></div>
+
+        <div class="p-2 border-t border-white/10 space-y-1 text-sm">
+            <div id="status-pill" class="px-2 py-1 text-xs text-gray-500 truncate">Conectando…</div>
             <button onclick="showSchedules()" class="w-full flex items-center gap-3 px-3 py-2 rounded-md hover:bg-white/5 transition">
                 <i class="fas fa-calendar-alt"></i> Tareas
             </button>
             <button onclick="showLogs()" class="w-full flex items-center gap-3 px-3 py-2 rounded-md hover:bg-white/5 transition">
                 <i class="fas fa-list-ul"></i> Logs
             </button>
+            <button onclick="showSettings()" class="w-full flex items-center gap-3 px-3 py-2 rounded-md hover:bg-white/5 transition">
+                <i class="fas fa-cog"></i> Config
+            </button>
         </div>
     </div>
 
     <!-- Main Content -->
-    <div class="flex-1 flex flex-col h-screen">
+    <div class="flex-1 flex flex-col h-screen min-w-0">
         <header class="h-14 border-b border-white/10 flex items-center px-4 justify-between">
-            <h1 id="chat-title" class="font-semibold">AgentLag v1.1.0</h1>
-            <div class="text-sm text-gray-400" id="status">Conectado</div>
+            <div class="flex items-center gap-3 min-w-0">
+                <i class="fas fa-robot text-emerald-400"></i>
+                <h1 id="chat-title" class="font-semibold truncate">AgentLag</h1>
+            </div>
+            <div class="flex items-center gap-3 text-xs text-gray-400">
+                <span id="stream-toggle-wrap" class="flex items-center gap-1.5 cursor-pointer select-none" onclick="toggleStream()" title="Activar/desactivar streaming de tokens">
+                    <i id="stream-icon" class="fas fa-bolt text-gray-500"></i>
+                    <span id="stream-label">Stream: off</span>
+                </span>
+                <span id="status" class="px-2 py-0.5 rounded bg-white/5">Listo</span>
+            </div>
         </header>
 
-        <main class="flex-1 chat-container overflow-y-auto p-4 md:p-8">
-            <div id="messages" class="max-w-3xl mx-auto space-y-6">
-                <!-- Messages will appear here -->
-                <div class="flex gap-4">
-                    <div class="w-8 h-8 rounded-full bg-emerald-600 flex items-center justify-center text-xs">AL</div>
-                    <div class="flex-1 space-y-2">
-                        <p>¡Hola! Soy AgentLag. ¿En qué puedo ayudarte hoy?</p>
-                    </div>
-                </div>
-            </div>
+        <main class="flex-1 chat-container overflow-y-auto p-4 md:p-8 scrollbar">
+            <div id="messages" class="max-w-3xl mx-auto space-y-6"></div>
             <div id="thinking" class="hidden max-w-3xl mx-auto mt-6 flex gap-4 thinking">
-                <div class="w-8 h-8 rounded-full bg-emerald-600 flex items-center justify-center text-xs">AL</div>
-                <div class="flex-1 italic text-gray-400">AgentLag está pensando...</div>
+                <div class="w-8 h-8 rounded-full bg-emerald-600 flex items-center justify-center text-xs flex-shrink-0">AL</div>
+                <div class="flex-1 italic text-gray-400" id="thinking-text">AgentLag está pensando…</div>
             </div>
         </main>
 
-        <footer class="p-4 bg-gradient-to-t from-[#212121] to-transparent">
+        <footer class="p-4 bg-gradient-to-t from-[#1a1a1a] to-transparent">
             <div class="max-w-3xl mx-auto relative">
-                <textarea id="user-input" rows="1" class="w-full bg-[#2f2f2f] text-white rounded-xl p-4 pr-12 focus:outline-none focus:ring-1 focus:ring-white/20 resize-none" placeholder="Escribe un mensaje..."></textarea>
-                <button onclick="sendMessage()" class="absolute right-3 bottom-3 w-8 h-8 bg-white text-black rounded-lg flex items-center justify-center hover:bg-gray-200 transition">
+                <textarea id="user-input" rows="1" class="w-full bg-[#2a2a2a] text-white rounded-xl p-4 pr-12 focus:outline-none focus:ring-1 focus:ring-white/20 resize-none scrollbar" placeholder="Escribe un mensaje… (Enter para enviar, Shift+Enter para salto de línea)"></textarea>
+                <button onclick="sendMessage()" id="send-btn" class="absolute right-3 bottom-3 w-8 h-8 bg-white text-black rounded-lg flex items-center justify-center hover:bg-gray-200 transition">
                     <i class="fas fa-arrow-up"></i>
                 </button>
             </div>
-            <p class="text-center text-xs text-gray-500 mt-2">AgentLag puede cometer errores. Considera verificar la información importante.</p>
+            <p class="text-center text-xs text-gray-500 mt-2">AgentLag puede cometer errores. Verifica la información importante.</p>
         </footer>
     </div>
 
-    <!-- Modals -->
-    <!-- Logs Modal -->
-    <div id="logs-modal" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-        <div class="bg-[#2f2f2f] rounded-xl w-full max-w-4xl p-6 shadow-xl h-[80vh] flex flex-col">
-            <div class="flex justify-between items-center mb-6">
-                <h2 class="text-xl font-bold">Logs de Ejecución</h2>
-                <button onclick="closeLogs()" class="text-gray-400 hover:text-white"><i class="fas fa-times"></i></button>
-            </div>
-            <div id="logs-list" class="flex-1 overflow-y-auto space-y-4 pr-2">
-                <!-- Logs will appear here -->
-            </div>
-        </div>
-    </div>
+    <!-- ───────────── Modals ───────────── -->
 
-    <div id="schedules-modal" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center p-4">
-        <div class="bg-[#2f2f2f] rounded-xl w-full max-w-2xl p-6 shadow-xl">
+    <!-- Schedules Modal -->
+    <div id="schedules-modal" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+        <div class="bg-[#2a2a2a] rounded-xl w-full max-w-2xl p-6 shadow-xl max-h-[85vh] overflow-y-auto scrollbar">
             <div class="flex justify-between items-center mb-6">
                 <h2 class="text-xl font-bold">Tareas Programadas</h2>
                 <button onclick="closeSchedules()" class="text-gray-400 hover:text-white"><i class="fas fa-times"></i></button>
             </div>
-            <div class="space-y-4">
-                <div class="grid grid-cols-2 gap-4">
-                    <input id="sched-id" placeholder="Nombre tarea" class="bg-[#171717] p-2 rounded border border-white/10">
-                    <input id="sched-cron" placeholder="Cron (ej: 0 9 * * 1-5)" class="bg-[#171717] p-2 rounded border border-white/10">
+            <div class="space-y-3 mb-4">
+                <div class="grid grid-cols-2 gap-3">
+                    <input id="sched-id" placeholder="ID (ej: daily-test)" class="bg-[#141414] p-2 rounded border border-white/10 text-sm">
+                    <input id="sched-cron" placeholder="Cron (ej: 0 9 * * 1-5)" class="bg-[#141414] p-2 rounded border border-white/10 text-sm">
                 </div>
-                <textarea id="sched-prompt" placeholder="¿Qué debe hacer el agente?" class="w-full bg-[#171717] p-2 rounded border border-white/10 h-24"></textarea>
-                <button onclick="addSchedule()" class="w-full bg-emerald-600 py-2 rounded font-bold hover:bg-emerald-700">Agregar Tarea</button>
+                <textarea id="sched-prompt" placeholder="¿Qué debe hacer el agente?" class="w-full bg-[#141414] p-2 rounded border border-white/10 h-24 text-sm"></textarea>
+                <button onclick="addSchedule()" class="w-full bg-emerald-600 py-2 rounded font-bold hover:bg-emerald-700 text-sm">Agregar Tarea</button>
             </div>
-            <div id="schedules-list" class="mt-8 space-y-2 max-h-60 overflow-y-auto border-t border-white/10 pt-4">
-                <!-- Schedules will appear here -->
+            <div id="schedules-list" class="mt-4 space-y-2 max-h-60 overflow-y-auto border-t border-white/10 pt-4 scrollbar"></div>
+        </div>
+    </div>
+
+    <!-- Logs Modal -->
+    <div id="logs-modal" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+        <div class="bg-[#2a2a2a] rounded-xl w-full max-w-4xl p-6 shadow-xl h-[80vh] flex flex-col">
+            <div class="flex justify-between items-center mb-6">
+                <h2 class="text-xl font-bold">Logs de Ejecución</h2>
+                <button onclick="closeLogs()" class="text-gray-400 hover:text-white"><i class="fas fa-times"></i></button>
             </div>
+            <div id="logs-list" class="flex-1 overflow-y-auto space-y-4 pr-2 scrollbar"></div>
+        </div>
+    </div>
+
+    <!-- Settings Modal -->
+    <div id="settings-modal" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+        <div class="bg-[#2a2a2a] rounded-xl w-full max-w-md p-6 shadow-xl">
+            <div class="flex justify-between items-center mb-6">
+                <h2 class="text-xl font-bold">Configuración</h2>
+                <button onclick="closeSettings()" class="text-gray-400 hover:text-white"><i class="fas fa-times"></i></button>
+            </div>
+            <div id="settings-content" class="space-y-3 text-sm"></div>
         </div>
     </div>
 
     <script>
+        // ───────────── State ─────────────
         let currentConversation = null;
         let chatHistory = [];
+        let activeTab = 'chats';
+        let streamingEnabled = false;
+        let isStreaming = false;
+        let abortController = null;
 
-        async function loadConversations() {
-            const res = await fetch('/api/conversations');
-            const data = await res.json();
+        // ───────────── Tabs (chats / mcp / skills) ─────────────
+        function switchTab(tab) {
+            activeTab = tab;
+            ['chats', 'mcp', 'skills'].forEach(t => {
+                const el = document.getElementById('tab-' + t);
+                if (t === tab) { el.classList.add('tab-active'); el.classList.remove('tab-inactive'); }
+                else           { el.classList.add('tab-inactive'); el.classList.remove('tab-active'); }
+            });
+            if (tab === 'chats')  loadConversations();
+            if (tab === 'mcp')    loadMcpView();
+            if (tab === 'skills') loadSkillsView();
+        }
+
+        async function loadMcpView() {
             const list = document.getElementById('conversations-list');
-            list.innerHTML = data.map(c => `
-                <button onclick="loadConversation('${c.name}')" class="w-full text-left px-3 py-2 rounded-md hover:bg-white/5 transition truncate text-sm">
-                    <i class="far fa-message mr-2"></i> ${c.name}
-                </button>
-            `).join('');
+            try {
+                const res = await fetch('/api/mcp');
+                const data = await res.json();
+                if (!data.servers || data.servers.length === 0) {
+                    list.innerHTML = '<div class="text-gray-500 text-xs px-2 py-4 text-center">No hay servidores MCP configurados.<br><br>Añádelos desde la CLI con:<br><code class="bg-black/40 px-2 py-1 rounded">/mcp add &lt;name&gt; &lt;cmd&gt;</code></div>';
+                    return;
+                }
+                list.innerHTML = data.servers.map(s => `
+                    <div class="px-3 py-2 rounded hover:bg-white/5 transition text-sm">
+                        <div class="flex items-center gap-2">
+                            <i class="fas fa-plug text-cyan-400 text-xs"></i>
+                            <span class="font-medium truncate">${s.name}</span>
+                            <span class="text-[10px] px-1.5 py-0.5 rounded ${s.type === 'url' ? 'bg-purple-900 text-purple-200' : 'bg-blue-900 text-blue-200'}">${s.type}</span>
+                        </div>
+                        <div class="text-xs text-gray-500 mt-1 truncate">${s.command || s.url || '-'} ${s.args ? s.args.join(' ') : ''}</div>
+                    </div>
+                `).join('');
+            } catch (e) {
+                list.innerHTML = '<div class="text-red-400 text-xs px-2 py-4">Error: ' + e.message + '</div>';
+            }
+        }
+
+        async function loadSkillsView() {
+            const list = document.getElementById('conversations-list');
+            try {
+                const res = await fetch('/api/skills');
+                const data = await res.json();
+                if (!data.skills || data.skills.length === 0) {
+                    list.innerHTML = '<div class="text-gray-500 text-xs px-2 py-4 text-center">No hay skills instaladas.<br><br>Instálalas desde la CLI con:<br><code class="bg-black/40 px-2 py-1 rounded">/skills</code></div>';
+                    return;
+                }
+                list.innerHTML = data.skills.map(s => `
+                    <div class="px-3 py-2 rounded hover:bg-white/5 transition text-sm">
+                        <div class="flex items-center gap-2">
+                            <i class="fas fa-book text-yellow-400 text-xs"></i>
+                            <span class="font-medium truncate">${s.name}</span>
+                            <span class="text-[10px] px-1.5 py-0.5 rounded bg-gray-700 text-gray-300">${s.scope}</span>
+                        </div>
+                        <div class="text-xs text-gray-500 mt-1 line-clamp-2">${s.description || ''}</div>
+                    </div>
+                `).join('');
+            } catch (e) {
+                list.innerHTML = '<div class="text-red-400 text-xs px-2 py-4">Error: ' + e.message + '</div>';
+            }
+        }
+
+        // ───────────── Conversations ─────────────
+        async function loadConversations() {
+            if (activeTab !== 'chats') return;
+            const list = document.getElementById('conversations-list');
+            try {
+                const res = await fetch('/api/conversations');
+                const data = await res.json();
+                if (!data || data.length === 0) {
+                    list.innerHTML = '<div class="text-gray-500 text-xs px-3 py-4 text-center">Sin conversaciones todavía.</div>';
+                    return;
+                }
+                list.innerHTML = data.map(c => `
+                    <div class="group flex items-center hover:bg-white/5 rounded transition text-sm">
+                        <button onclick="loadConversation('${c.name}')" class="flex-1 text-left px-3 py-2 truncate">
+                            <i class="far fa-message mr-2 text-gray-500"></i>${c.name}
+                        </button>
+                        <button onclick="deleteConversation('${c.name}')" class="opacity-0 group-hover:opacity-100 text-red-500 hover:text-red-400 px-2 py-2 transition" title="Eliminar">
+                            <i class="fas fa-trash text-xs"></i>
+                        </button>
+                    </div>
+                `).join('');
+            } catch (e) {
+                list.innerHTML = '<div class="text-red-400 text-xs px-3 py-4">Error: ' + e.message + '</div>';
+            }
         }
 
         async function loadConversation(name) {
@@ -125,100 +244,258 @@
             document.getElementById('chat-title').innerText = name;
             const res = await fetch(`/api/conversations/${name}`);
             const data = await res.json();
-            chatHistory = data.history.map(m => ({ type: m.type, content: m.content }));
+            chatHistory = (data.history || []).map(m => ({ type: m.type, content: m.content }));
             renderMessages();
+            // Switch to chats tab to see messages
+            switchTab('chats');
+        }
+
+        async function deleteConversation(name) {
+            if (!confirm(`¿Eliminar la conversación "${name}"?`)) return;
+            await fetch(`/api/conversations/${name}`, { method: 'DELETE' });
+            if (currentConversation === name) {
+                currentConversation = null;
+                chatHistory = [];
+                document.getElementById('chat-title').innerText = 'AgentLag';
+                renderMessages();
+            }
+            loadConversations();
         }
 
         function newChat() {
-            currentConversation = 'conversacion' + Date.now();
+            currentConversation = 'chat-' + new Date().toISOString().slice(0,19).replace(/[:T]/g,'-');
             chatHistory = [];
-            document.getElementById('chat-title').innerText = 'Nueva Conversación';
+            document.getElementById('chat-title').innerText = 'Nueva conversación';
             renderMessages();
+            switchTab('chats');
+            document.getElementById('user-input').focus();
         }
 
         function renderMessages() {
             const container = document.getElementById('messages');
-            container.innerHTML = chatHistory.map(m => `
-                <div class="flex gap-4">
-                    <div class="w-8 h-8 rounded-full ${m.type === 'user' ? 'bg-blue-600' : 'bg-emerald-600'} flex items-center justify-center text-xs">
-                        ${m.type === 'user' ? 'U' : 'AL'}
-                    </div>
-                    <div class="flex-1 space-y-2">
-                        <div class="prose prose-invert">${formatContent(m.content)}</div>
-                    </div>
-                </div>
-            `).join('');
+            if (chatHistory.length === 0) {
+                container.innerHTML = `
+                    <div class="flex gap-4">
+                        <div class="w-8 h-8 rounded-full bg-emerald-600 flex items-center justify-center text-xs flex-shrink-0">AL</div>
+                        <div class="flex-1 space-y-2">
+                            <div class="prose prose-invert"><p>¡Hola! Soy AgentLag. ¿En qué puedo ayudarte hoy?</p></div>
+                        </div>
+                    </div>`;
+            } else {
+                container.innerHTML = chatHistory.map(m => renderMessage(m)).join('');
+            }
             container.scrollTop = container.scrollHeight;
         }
 
-        function formatContent(content) {
-            // Very basic markdown-like formatting for pre tags
-            return content.replace(/```([\s\S]*?)```/g, '<pre><code></code></pre>')
-                          .replace(/\n/g, '<br>');
+        function renderMessage(m) {
+            const isUser = m.type === 'user';
+            const avatar = isUser ? 'bg-blue-600' : 'bg-emerald-600';
+            const label  = isUser ? 'U' : 'AL';
+            const content = isUser ? escapeHtml(m.content) : renderMarkdown(m.content);
+            return `
+                <div class="flex gap-4">
+                    <div class="w-8 h-8 rounded-full ${avatar} flex items-center justify-center text-xs flex-shrink-0">${label}</div>
+                    <div class="flex-1 space-y-2 min-w-0">
+                        <div class="prose prose-invert">${content}</div>
+                    </div>
+                </div>`;
         }
 
+        function escapeHtml(s) {
+            if (typeof s !== 'string') s = String(s ?? '');
+            return s.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+        }
+
+        function renderMarkdown(text) {
+            if (typeof text !== 'string') text = String(text ?? '');
+            try {
+                const html = marked.parse(text, { breaks: true, gfm: true });
+                return DOMPurify.sanitize(html);
+            } catch {
+                return escapeHtml(text).replace(/\n/g, '<br>');
+            }
+        }
+
+        // ───────────── Send message (supports streaming) ─────────────
         async function sendMessage() {
             const input = document.getElementById('user-input');
             const message = input.value.trim();
-            if (!message) return;
+            if (!message || isStreaming) return;
 
             input.value = '';
+            input.style.height = 'auto';
             chatHistory.push({ type: 'user', content: message });
             renderMessages();
 
-            document.getElementById('thinking').classList.remove('hidden');
+            if (streamingEnabled) {
+                await sendStream(message);
+            } else {
+                await sendNormal(message);
+            }
 
-            const res = await fetch('/api/chat', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    message,
-                    history: chatHistory.slice(0, -1),
-                    conversationName: currentConversation || 'latest'
-                })
-            });
-
-            const data = await res.json();
-            document.getElementById('thinking').classList.add('hidden');
-            chatHistory.push({ type: 'assistant', content: data.content });
-            renderMessages();
             loadConversations();
         }
 
-        // Schedules
-        function showSchedules() {
-            document.getElementById('schedules-modal').classList.remove('hidden');
-            loadSchedules();
+        async function sendNormal(message) {
+            document.getElementById('thinking').classList.remove('hidden');
+            document.getElementById('status').innerText = 'Pensando…';
+            document.getElementById('send-btn').disabled = true;
+            try {
+                const res = await fetch('/api/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        message,
+                        history: chatHistory.slice(0, -1),
+                        conversationName: currentConversation || 'latest'
+                    })
+                });
+                const data = await res.json();
+                chatHistory.push({ type: 'assistant', content: data.content || '(sin respuesta)' });
+                renderMessages();
+            } catch (e) {
+                chatHistory.push({ type: 'assistant', content: '❌ Error: ' + e.message });
+                renderMessages();
+            } finally {
+                document.getElementById('thinking').classList.add('hidden');
+                document.getElementById('status').innerText = 'Listo';
+                document.getElementById('send-btn').disabled = false;
+            }
         }
-        function closeSchedules() {
-            document.getElementById('schedules-modal').classList.add('hidden');
+
+        async function sendStream(message) {
+            isStreaming = true;
+            document.getElementById('thinking').classList.remove('hidden');
+            document.getElementById('thinking-text').innerText = 'AgentLag está escribiendo…';
+            document.getElementById('status').innerText = 'Stream…';
+            document.getElementById('send-btn').disabled = true;
+            abortController = new AbortController();
+
+            // Push an empty assistant message that we'll update as tokens arrive.
+            chatHistory.push({ type: 'assistant', content: '' });
+            const assistantIdx = chatHistory.length - 1;
+            renderMessages();
+
+            try {
+                const res = await fetch('/api/chat/stream', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        message,
+                        history: chatHistory.slice(0, -2),  // exclude user msg + empty assistant
+                        conversationName: currentConversation || 'latest'
+                    }),
+                    signal: abortController.signal,
+                });
+
+                const reader = res.body.getReader();
+                const decoder = new TextDecoder();
+                let buffer = '';
+
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+                    buffer += decoder.decode(value, { stream: true });
+
+                    // SSE events are separated by double newlines.
+                    const events = buffer.split(/\n\n/);
+                    buffer = events.pop() || '';
+
+                    for (const evt of events) {
+                        const lines = evt.split(/\n/);
+                        let eventName = 'message', eventData = '';
+                        for (const line of lines) {
+                            if (line.startsWith('event:')) eventName = line.slice(6).trim();
+                            else if (line.startsWith('data:'))  eventData = line.slice(5).trim();
+                        }
+                        if (!eventData) continue;
+                        try {
+                            const data = JSON.parse(eventData);
+                            if (eventName === 'token' && data.text) {
+                                chatHistory[assistantIdx].content += data.text;
+                                renderMessages();
+                            } else if (eventName === 'note') {
+                                // show a small note (e.g. fallback mode)
+                            } else if (eventName === 'done') {
+                                if (!chatHistory[assistantIdx].content && data.fullText) {
+                                    chatHistory[assistantIdx].content = data.fullText;
+                                    renderMessages();
+                                }
+                            } else if (eventName === 'error') {
+                                chatHistory[assistantIdx].content = '❌ Error: ' + (data.message || 'unknown');
+                                renderMessages();
+                            }
+                        } catch {}
+                    }
+                }
+            } catch (e) {
+                if (e.name === 'AbortError') {
+                    chatHistory[assistantIdx].content += '\n\n[Interrumpido]';
+                } else {
+                    chatHistory[assistantIdx].content = '❌ Error de stream: ' + e.message;
+                }
+                renderMessages();
+            } finally {
+                isStreaming = false;
+                abortController = null;
+                document.getElementById('thinking').classList.add('hidden');
+                document.getElementById('thinking-text').innerText = 'AgentLag está pensando…';
+                document.getElementById('status').innerText = 'Listo';
+                document.getElementById('send-btn').disabled = false;
+            }
         }
+
+        function toggleStream() {
+            streamingEnabled = !streamingEnabled;
+            const icon = document.getElementById('stream-icon');
+            const label = document.getElementById('stream-label');
+            if (streamingEnabled) {
+                icon.classList.remove('text-gray-500');
+                icon.classList.add('text-emerald-400');
+                label.innerText = 'Stream: on';
+            } else {
+                icon.classList.add('text-gray-500');
+                icon.classList.remove('text-emerald-400');
+                label.innerText = 'Stream: off';
+            }
+        }
+
+        // ───────────── Schedules ─────────────
+        function showSchedules() { document.getElementById('schedules-modal').classList.remove('hidden'); loadSchedules(); }
+        function closeSchedules() { document.getElementById('schedules-modal').classList.add('hidden'); }
 
         async function loadSchedules() {
             const res = await fetch('/api/schedules');
             const data = await res.json();
             const list = document.getElementById('schedules-list');
+            if (!data || data.length === 0) {
+                list.innerHTML = '<p class="text-gray-500 text-sm text-center">No hay tareas programadas.</p>';
+                return;
+            }
             list.innerHTML = data.map(s => `
                 <div class="bg-black/20 p-3 rounded flex justify-between items-center">
-                    <div>
-                        <div class="font-bold">${s.id} <span class="text-xs text-emerald-400">${s.cronExp}</span></div>
-                        <div class="text-xs text-gray-400">${s.prompt}</div>
+                    <div class="min-w-0">
+                        <div class="font-bold text-sm truncate">${s.id} <span class="text-xs text-emerald-400 font-mono">${s.cronExp}</span></div>
+                        <div class="text-xs text-gray-400 truncate">${s.prompt}</div>
                     </div>
-                    <button onclick="deleteSchedule('${s.id}')" class="text-red-500 hover:text-red-400"><i class="fas fa-trash"></i></button>
+                    <button onclick="deleteSchedule('${s.id}')" class="text-red-500 hover:text-red-400 px-2"><i class="fas fa-trash"></i></button>
                 </div>
             `).join('');
         }
 
         async function addSchedule() {
-            const id = document.getElementById('sched-id').value;
-            const cronExp = document.getElementById('sched-cron').value;
-            const prompt = document.getElementById('sched-prompt').value;
-
+            const id = document.getElementById('sched-id').value.trim();
+            const cronExp = document.getElementById('sched-cron').value.trim();
+            const prompt = document.getElementById('sched-prompt').value.trim();
+            if (!id || !cronExp || !prompt) { alert('Completa todos los campos'); return; }
             await fetch('/api/schedules', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ id, cronExp, prompt })
             });
+            document.getElementById('sched-id').value = '';
+            document.getElementById('sched-cron').value = '';
+            document.getElementById('sched-prompt').value = '';
             loadSchedules();
         }
 
@@ -227,51 +504,97 @@
             loadSchedules();
         }
 
-        // Logs
-        function showLogs() {
-            document.getElementById('logs-modal').classList.remove('hidden');
-            loadLogs();
-        }
-        function closeLogs() {
-            document.getElementById('logs-modal').classList.add('hidden');
-        }
+        // ───────────── Logs ─────────────
+        function showLogs() { document.getElementById('logs-modal').classList.remove('hidden'); loadLogs(); }
+        function closeLogs() { document.getElementById('logs-modal').classList.add('hidden'); }
 
         async function loadLogs() {
             const res = await fetch('/api/logs/scheduler');
             const data = await res.json();
             const list = document.getElementById('logs-list');
-
-            if (data.length === 0) {
+            if (!data || data.length === 0) {
                 list.innerHTML = '<p class="text-gray-500 text-center">No hay logs registrados todavía.</p>';
                 return;
             }
-
             list.innerHTML = data.reverse().map(log => `
                 <div class="bg-black/30 p-4 rounded-lg border border-white/5">
                     <div class="flex justify-between items-start mb-2">
                         <span class="text-xs font-mono text-gray-500">${new Date(log.timestamp).toLocaleString()}</span>
-                        <span class="px-2 py-0.5 rounded text-[10px] font-bold uppercase ${log.source === 'scheduler' ? 'bg-purple-900 text-purple-200' : 'bg-blue-900 text-blue-200'}">
-                            ${log.source}
-                        </span>
+                        <span class="px-2 py-0.5 rounded text-[10px] font-bold uppercase ${log.source === 'scheduler' ? 'bg-purple-900 text-purple-200' : 'bg-blue-900 text-blue-200'}">${log.source}</span>
                     </div>
                     ${log.taskId ? `<div class="text-emerald-400 text-sm font-bold mb-1">Tarea: ${log.taskId}</div>` : ''}
                     ${log.user ? `<div class="text-blue-400 text-sm font-bold mb-1">Usuario: ${log.user}</div>` : ''}
-                    <div class="text-gray-300 text-sm mb-2 italic">"${log.input || log.prompt}"</div>
-                    <div class="bg-black/20 p-2 rounded text-xs text-gray-400 whitespace-pre-wrap border-l-2 border-emerald-500">
-                        ${log.output || (log.error ? '❌ Error: ' + log.error : 'Sin salida')}
-                    </div>
+                    <div class="text-gray-300 text-sm mb-2 italic">"${escapeHtml(log.input || log.prompt || '')}"</div>
+                    <div class="bg-black/20 p-2 rounded text-xs text-gray-400 whitespace-pre-wrap border-l-2 border-emerald-500">${escapeHtml(log.output || (log.error ? '❌ Error: ' + log.error : 'Sin salida'))}</div>
                 </div>
             `).join('');
         }
 
-        // Init
-        loadConversations();
-        document.getElementById('user-input').addEventListener('keydown', (e) => {
+        // ───────────── Settings ─────────────
+        function showSettings() {
+            document.getElementById('settings-modal').classList.remove('hidden');
+            loadSettings();
+        }
+        function closeSettings() { document.getElementById('settings-modal').classList.add('hidden'); }
+
+        async function loadSettings() {
+            try {
+                const [statusRes, configRes, toolsRes] = await Promise.all([
+                    fetch('/api/status'), fetch('/api/config'), fetch('/api/tools')
+                ]);
+                const status = await statusRes.json();
+                const config = await configRes.json();
+                const tools  = await toolsRes.json();
+                document.getElementById('settings-content').innerHTML = `
+                    <div class="flex justify-between"><span class="text-gray-400">Proveedor</span><span>${config.provider || '-'}</span></div>
+                    <div class="flex justify-between"><span class="text-gray-400">Modelo</span><span class="truncate ml-2">${config.model || '-'}</span></div>
+                    <div class="flex justify-between"><span class="text-gray-400">Esfuerzo</span><span>${config.effort || 'default'}</span></div>
+                    <div class="flex justify-between"><span class="text-gray-400">Idioma</span><span>${config.language || 'es'}</span></div>
+                    <div class="flex justify-between"><span class="text-gray-400">Agente</span><span class="${status.agentReady ? 'text-emerald-400' : 'text-yellow-400'}">${status.agentReady ? 'Listo' : 'Cargando…'}</span></div>
+                    <div class="flex justify-between"><span class="text-gray-400">ReAct forzado</span><span>${config.forceReAct ? 'Sí' : 'No'}</span></div>
+                    <div class="border-t border-white/10 my-3"></div>
+                    <div class="text-gray-400 text-xs mb-1">Tools nativas (${tools.tools.length}):</div>
+                    <div class="text-xs text-gray-300 max-h-40 overflow-y-auto scrollbar">${tools.tools.map(t => `<div class="py-0.5"><span class="text-cyan-400">•</span> ${t.name}</div>`).join('')}</div>
+                `;
+            } catch (e) {
+                document.getElementById('settings-content').innerHTML = '<div class="text-red-400">Error: ' + e.message + '</div>';
+            }
+        }
+
+        // ───────────── Init ─────────────
+        async function refreshStatus() {
+            try {
+                const res = await fetch('/api/status');
+                const data = await res.json();
+                const pill = document.getElementById('status-pill');
+                if (data.provider && data.model) {
+                    pill.innerHTML = `<i class="fas fa-circle text-emerald-500 text-[8px]"></i> ${data.provider} · ${data.model}`;
+                } else {
+                    pill.innerHTML = '<i class="fas fa-circle text-yellow-500 text-[8px]"></i> Sin configurar — ejecuta la CLI primero';
+                }
+            } catch {
+                document.getElementById('status-pill').innerText = 'Sin conexión al servidor';
+            }
+        }
+
+        // Auto-resize textarea
+        const userInput = document.getElementById('user-input');
+        userInput.addEventListener('input', () => {
+            userInput.style.height = 'auto';
+            userInput.style.height = Math.min(userInput.scrollHeight, 200) + 'px';
+        });
+        userInput.addEventListener('keydown', (e) => {
             if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
                 sendMessage();
             }
         });
+
+        // Init
+        switchTab('chats');
+        refreshStatus();
+        setInterval(refreshStatus, 5000);
+        document.getElementById('user-input').focus();
     </script>
 </body>
 </html>

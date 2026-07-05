@@ -75,6 +75,22 @@ const App = ({ config: initCfg }) => {
     const [input,       setInput]      = useState('');
     const [cmdIndex,    setCmdIndex]   = useState(0);
     const [status,      setStatus]     = useState('idle');
+    // Cursor position within `input`. Tracked as state so re-render happens
+    // when arrows move it. Range: [0 .. input.length].
+    const [cursorPos,   setCursorPos]  = useState(0);
+    // Wrapper that keeps cursor in sync when input changes wholesale.
+    const setInputAt = useCallback((newText, newPos) => {
+        const txt = typeof newText === 'function' ? newText(inputRef.current) : newText;
+        const pos = newPos === undefined || newPos > txt.length ? txt.length
+                  : newPos < 0 ? 0 : newPos;
+        inputRef.current = txt;
+        cursorPosRef.current = pos;
+        setInput(txt);
+        setCursorPos(pos);
+    }, []);
+    // Refs to read fresh values inside useInput without stale closures.
+    const inputRef = useRef('');
+    const cursorPosRef = useRef(0);
     const schedulerRef = useRef(null);
     if (!schedulerRef.current) {
         schedulerRef.current = new Scheduler(async (p) => {
@@ -129,6 +145,15 @@ const App = ({ config: initCfg }) => {
         saveSession(historyRef.current, currentConversationRef.current);
         process.exit();
     }, []);
+
+    useEffect(() => {
+        inputRef.current = input;
+        // Si el cursor quedó más allá del final del texto, recortar.
+        if (cursorPosRef.current > input.length) {
+            cursorPosRef.current = input.length;
+            setCursorPos(input.length);
+        }
+    }, [input]);
 
     useEffect(() => {
         const onExit   = () => saveSession(historyRef.current, currentConversationRef.current);
@@ -268,7 +293,7 @@ const App = ({ config: initCfg }) => {
                 if (trimmed && !trimmed.startsWith('/')) {
                     // No hacemos nada o podrías mostrar un aviso breve.
                     // El useEffect ya puso el error en el historial.
-                    setInput('');
+                    setInputAt('', 0);
                     return;
                 }
             }
@@ -393,8 +418,8 @@ const App = ({ config: initCfg }) => {
 
         // ── main ──────────────────────────────────────────────────────────────
         if (screen === 'main') {
-            if (str === '!' && input === '') { setInput('! '); return; }
-            if (str === '@' && input === '') { setInput('@ '); return; }
+            if (str === '!' && input === '') { setInputAt('! ', 2); return; }
+            if (str === '@' && input === '') { setInputAt('@ ', 2); return; }
 
             if (key.ctrl && str === 'o') {
                 setIsVerbose(p => {
@@ -422,10 +447,21 @@ const App = ({ config: initCfg }) => {
                     msgRef.current = []; currentConversationRef.current = null;
                     clearLatestSession();
                 } else {
-                    setInput(''); setCmdIndex(0);
+                    setInputAt('', 0); setCmdIndex(0);
                 }
                 return;
             }
+        }
+
+        // ── Cancelar agente (ESC o Ctrl+Z) ────────────────────────────────────
+        // El hint dice "ESC para interrumpir" — ahora ESC realmente interrumpe.
+        if (status !== 'idle') {
+            if (key.escape || (key.ctrl && str === 'z')) {
+                abortCtrlRef.current?.abort();
+                setStatus('idle'); setActiveTool(null); setThinkStart(null); setElapsed(0);
+                setStaticHistory(prev => [...prev, { type: 'assistant', text: t('execution_cancelled_user') }]);
+            }
+            return;
         }
 
         // ── Confirmación pendiente ────────────────────────────────────────────
@@ -436,16 +472,6 @@ const App = ({ config: initCfg }) => {
             if (key.return) {
                 pendingConfirm.resolve(confirmIdx !== 2);
                 setPendingConfirm(null); setConfirmIdx(0);
-            }
-            return;
-        }
-
-        // ── Cancelar agente ───────────────────────────────────────────────────
-        if (status !== 'idle') {
-            if (key.ctrl && str === 'z') {
-                abortCtrlRef.current?.abort();
-                setStatus('idle'); setActiveTool(null); setThinkStart(null);
-                setStaticHistory(prev => [...prev, { type: 'assistant', text: t('execution_cancelled_user') }]);
             }
             return;
         }
@@ -475,10 +501,10 @@ const App = ({ config: initCfg }) => {
                 const modelName = trimmed.replace('/download', '').trim().replace(/^hf\.co\//, '');
                 if (!modelName) {
                     say(t('download_usage'));
-                    setInput(''); return;
+                    setInputAt('', 0); return;
                 }
                 say(t('downloading_model', { name: modelName }));
-                setInput('');
+                setInputAt('', 0);
                 downloadHFModel(modelName, {
                     onProgress: () => {},
                     onStatus:   () => {},
@@ -491,35 +517,142 @@ const App = ({ config: initCfg }) => {
             // /evolve
             if (trimmed === '/evolve' || trimmed.startsWith('/evolve ')) {
                 _handleEvolveCommand(trimmed, say, setStaticHistory);
-                setInput(''); return;
+                setInputAt('', 0); return;
             }
 
-            // Slash commands normales
-            const handled = handleSlashCommand(trimmed, cmdCtx);
-            if (handled === true) { setInput(''); setCmdIndex(0); return; }
+            // Slash commands normales — handleSlashCommand es async, hay que esperarlo.
+            // Si no se espera, devuelve una Promise (que nunca === true), el chequeo
+            // falla, y el input se acaba mandando al agente como si fuera un mensaje.
+            (async () => {
+                const handled = await handleSlashCommand(trimmed, cmdCtx);
+                if (handled === true) { setInputAt('', 0); setCmdIndex(0); return; }
 
-            // Autocomplete: si es un slash parcial, completar
-            if (trimmed.startsWith('/')) {
-                const q = trimmed.slice(1).toLowerCase();
-                const m = SLASH_COMMANDS.filter(c => c.cmd.includes(q))[cmdIndex];
-                if (m) { setInput(m.cmd + ' '); setCmdIndex(0); return; }
-            }
+                // Si empieza con '/' pero no fue manejado por handleSlashCommand,
+                // es un comando desconocido o un comando parcial.
+                if (trimmed.startsWith('/')) {
+                    const q = trimmed.slice(1).toLowerCase();
 
-            setInput(''); setCmdIndex(0);
-            runAgentTurn(trimmed, {
-                agent, msgRef,
-                setStaticHistory, setStatus, setActiveTool,
-                setThinkWord, setThinkStart, setElapsed, setTotalTokens,
-                abortCtrlRef, askConfirm,
-                setAgent, setForceReAct, persistFlag,
-                setLastError,
-            });
+                    // ¿Existe una coincidencia parcial para autocompletar?
+                    const matches = SLASH_COMMANDS.filter(c => c.cmd.includes(q));
+                    if (matches.length > 0) {
+                        const m = matches[cmdIndex] || matches[0];
+                        // Solo autocompletar si el input NO es ya un comando completo.
+                        // Si el input ya es exactamente un comando de la lista pero
+                        // handleSlashCommand devolvió false, es porque el comando
+                        // existe en el catálogo pero no tiene case en el switch —
+                        // mostramos error en lugar de mandarlo al agente.
+                        if (m.cmd === trimmed) {
+                            say(`⚠ Comando no implementado: ${trimmed}. Usa /help para ver los comandos disponibles.`);
+                            setInputAt('', 0); setCmdIndex(0);
+                            return;
+                        }
+                        setInputAt(m.cmd + ' ', m.cmd.length + 1); setCmdIndex(0);
+                        return;
+                    }
+
+                    // Comando slash desconocido — nunca mandarlo al agente.
+                    say(`⚠ Comando desconocido: ${trimmed}. Usa /help para ver los comandos disponibles.`);
+                    setInputAt('', 0); setCmdIndex(0);
+                    return;
+                }
+
+                setInputAt('', 0); setCmdIndex(0);
+                runAgentTurn(trimmed, {
+                    agent, msgRef,
+                    setStaticHistory, setStatus, setActiveTool,
+                    setThinkWord, setThinkStart, setElapsed, setTotalTokens,
+                    abortCtrlRef, askConfirm,
+                    setAgent, setForceReAct, persistFlag,
+                    setLastError,
+                });
+            })();
             return;
         }
 
-        // ── Edición de texto ──────────────────────────────────────────────────
-        if (key.backspace || key.delete) { setInput(p => p.slice(0, -1)); setCmdIndex(0); return; }
-        if (str && !key.ctrl && !key.meta) { setInput(p => p + str); setCmdIndex(0); }
+        // ── Edición de texto con cursor ──────────────────────────────────────
+        // Soporta: backspace, delete, flechas izq/der, Home/End (Ctrl+A/Ctrl+E),
+        // Ctrl+U (borrar línea), Ctrl+K (borrar hasta final), pegado multilínea.
+        if (key.backspace || key.delete) {
+            const pos = cursorPosRef.current;
+            if (pos > 0) {
+                const txt = inputRef.current;
+                const next = txt.slice(0, pos - 1) + txt.slice(pos);
+                setInputAt(next, pos - 1);
+            }
+            setCmdIndex(0);
+            return;
+        }
+        if (key.leftArrow) {
+            const pos = cursorPosRef.current;
+            if (pos > 0) { cursorPosRef.current = pos - 1; setCursorPos(pos - 1); }
+            setCmdIndex(0);
+            return;
+        }
+        if (key.rightArrow) {
+            const pos = cursorPosRef.current;
+            const maxPos = inputRef.current.length;
+            if (pos < maxPos) { cursorPosRef.current = pos + 1; setCursorPos(pos + 1); }
+            setCmdIndex(0);
+            return;
+        }
+        // Ctrl+A → inicio, Ctrl+E → final (convención readline/Emacs)
+        if (key.ctrl && str === 'a') {
+            cursorPosRef.current = 0; setCursorPos(0); setCmdIndex(0); return;
+        }
+        if (key.ctrl && str === 'e') {
+            const end = inputRef.current.length;
+            cursorPosRef.current = end; setCursorPos(end); setCmdIndex(0); return;
+        }
+        // Ctrl+U → borrar desde cursor hasta inicio
+        if (key.ctrl && str === 'u') {
+            const pos = cursorPosRef.current;
+            const txt = inputRef.current;
+            const next = txt.slice(pos);
+            setInputAt(next, 0);
+            setCmdIndex(0);
+            return;
+        }
+        // Ctrl+K → borrar desde cursor hasta final
+        if (key.ctrl && str === 'k') {
+            const pos = cursorPosRef.current;
+            const txt = inputRef.current;
+            const next = txt.slice(0, pos);
+            setInputAt(next, pos);
+            setCmdIndex(0);
+            return;
+        }
+        // Ctrl+W → borrar palabra anterior
+        if (key.ctrl && str === 'w') {
+            const pos = cursorPosRef.current;
+            const txt = inputRef.current;
+            const before = txt.slice(0, pos);
+            const after  = txt.slice(pos);
+            const m = before.match(/\S+\s*$/);
+            if (m) {
+                const next = before.slice(0, before.length - m[0].length) + after;
+                setInputAt(next, before.length - m[0].length);
+            }
+            setCmdIndex(0);
+            return;
+        }
+
+        if (str && !key.ctrl && !key.meta) {
+            // Pegado multilínea: Ink entrega el texto pegado en una sola llamada
+            // de useInput. Si contiene \r o \n, lo normalizamos a \n y lo
+            // insertamos completo en la posición del cursor (en vez de cortarlo).
+            // Antes, los pegados largos se truncaban porque Ink llamaba a
+            // useInput carácter por carácter y el handler no acumulaba
+            // correctamente; ahora recibimos el texto completo y lo insertamos.
+            let text = str;
+            if (text.includes('\r')) text = text.replace(/\r\n?/g, '\n');
+
+            const pos = cursorPosRef.current;
+            const txt = inputRef.current;
+            const next = txt.slice(0, pos) + text + txt.slice(pos);
+            const newPos = pos + text.length;
+            setInputAt(next, newPos);
+            setCmdIndex(0);
+        }
     });
 
     // ── Render ────────────────────────────────────────────────────────────────
@@ -587,8 +720,14 @@ const App = ({ config: initCfg }) => {
                         <HR />
                         <Box>
                             <Text color={isWorking ? 'gray' : 'cyan'}>❯ </Text>
-                            <Text>{input}</Text>
-                            <Text color={isWorking ? 'gray' : 'white'}>█</Text>
+                            <Text>{input.slice(0, cursorPos)}</Text>
+                            {/* Cursor: resalta el carácter bajo el cursor, o muestra bloque al final */}
+                            {cursorPos < input.length ? (
+                                <Text color={isWorking ? 'gray' : 'white'} inverse>{input[cursorPos]}</Text>
+                            ) : (
+                                <Text color={isWorking ? 'gray' : 'white'}>█</Text>
+                            )}
+                            <Text>{input.slice(cursorPos + 1)}</Text>
                         </Box>
                         <HR />
                     </Box>
