@@ -5,7 +5,8 @@ import path from 'path';
 import os   from 'os';
 import { spawn } from 'child_process';
 import { HumanMessage, AIMessage } from '@langchain/core/messages';
-import { buildAgent, stripMarkdown, trySalvageToolCall, messageText } from './agent.js';
+import { buildAgent, stripMarkdown, trySalvageToolCall, messageText, createLLM, loadConfig, buildSystemPrompt } from './agent.js';
+import { tools } from './tools.js';
 import { RecordingSession } from './recording_logger.js';
 import { analyzeAndEvolve } from './evolution_engine.js';
 import { addEvolution } from './evolution_store.js';
@@ -266,6 +267,151 @@ async function _handleAgentError(err, agent, msgRef, setStaticHistory, setStatus
         setStaticHistory(prev => [...prev, { type: 'assistant', text: `\u26a0\ufe0f Rate limit del proveedor. Espera unos segundos e intenta de nuevo.` }]);
     } else {
         setStaticHistory(prev => [...prev, { type: 'assistant', text: `❌ Error: ${err?.message || err}` }]);
+    }
+}
+
+// ── Modo stream: tokens uno por uno (LLM directo, sin tools) ──────────────────
+
+/**
+ * Ejecuta un turno en modo STREAMING token-a-token.
+ *
+ * Construye un LLM "pelado" (sin bindTools) para garantizar que el proveedor
+ * haga streaming de tokens. Algunos proveedores no soportan streaming cuando
+ * hay tool-calling activo; por eso este modo bypassa el grafo LangGraph y
+ * emite cada delta apenas llega.
+ *
+ * @param {string} msg   - Mensaje del usuario.
+ * @param {object} ctx   - Contexto de la aplicación (igual que runAgentTurn).
+ */
+export async function runStreamTurn(msg, ctx) {
+    const {
+        msgRef,
+        setStaticHistory, setStatus, setActiveTool,
+        setThinkWord, setThinkStart, setElapsed,
+        abortCtrlRef, setLastError,
+    } = ctx;
+
+    if (!msg) return;
+
+    // Construir el LLM pelado (sin tools) para garantizar streaming de tokens.
+    let llm;
+    try {
+        const cfg = loadConfig();
+        const provider = cfg.provider || 'groq';
+        const model    = cfg.model    || 'qwen/qwen3-32b';
+        const apiKey   = cfg.apiKey   || null;
+        const baseUrl  = cfg.baseUrl  || null;
+        const effort   = cfg.effort   || null;
+        llm = await createLLM(provider, model, apiKey, baseUrl, effort, { toolsEnabled: false });
+    } catch (e) {
+        setStaticHistory(prev => [...prev, { type: 'assistant', text: `❌ No se pudo construir el LLM para streaming: ${e.message}` }]);
+        return;
+    }
+
+    // Verificar si el LLM expone stream(). Todos los ChatModels de LangChain lo
+    // hacen, pero lo comprobamos por si acaso.
+    if (typeof llm.stream !== 'function') {
+        setStaticHistory(prev => [...prev, {
+            type: 'assistant',
+            text: `⚠ Este proveedor/modelo no admite streaming de tokens. Usa el modo normal (sin /stream).`
+        }]);
+        return;
+    }
+
+    setStaticHistory(prev => [...prev, { type: 'user', text: msg }]);
+    setThinkWord(t('think_1')); setThinkStart(Date.now()); setElapsed(0);
+    setStatus('thinking'); setActiveTool(null);
+
+    // Imagenes embebidas
+    const imageRegex = /\b\S+\.(png|jpg|jpeg|webp|gif)\b/gi;
+    const foundImages = [];
+    for (const imgPath of (msg.match(imageRegex) || [])) {
+        try {
+            const fullPath = path.resolve(process.cwd(), imgPath);
+            if (fs.existsSync(fullPath)) {
+                const ext    = path.extname(fullPath).toLowerCase().replace('.', '');
+                const base64 = fs.readFileSync(fullPath).toString('base64');
+                foundImages.push({
+                    type: 'image_url',
+                    image_url: { url: `data:image/${ext === 'jpg' ? 'jpeg' : ext};base64,${base64}` },
+                });
+            }
+        } catch {}
+    }
+
+    if (foundImages.length > 0) {
+        msgRef.current = [...msgRef.current, new HumanMessage({ content: [{ type: 'text', text: msg }, ...foundImages] })];
+    } else {
+        msgRef.current = [...msgRef.current, new HumanMessage(msg)];
+    }
+
+    abortCtrlRef.current = new AbortController();
+
+    // Mensaje streaming inicial (vacío, iremos actualizando)
+    const appendChunk = (chunkText) => {
+        if (!chunkText) return;
+        setStaticHistory(prev => {
+            // Si el último item es un assistant streaming, anexar; si no, crear.
+            const last = prev[prev.length - 1];
+            if (last && last.type === 'assistant' && last.streaming === true) {
+                const next = [...prev];
+                next[next.length - 1] = { ...last, text: last.text + chunkText };
+                return next;
+            }
+            return [...prev, { type: 'assistant', text: chunkText, streaming: true }];
+        });
+    };
+    const finalizeStreamMsg = () => {
+        setStaticHistory(prev => {
+            const last = prev[prev.length - 1];
+            if (last && last.type === 'assistant' && last.streaming === true) {
+                const next = [...prev];
+                next[next.length - 1] = { ...last, streaming: false };
+                return next;
+            }
+            return prev;
+        });
+    };
+
+    let fullText = '';
+    try {
+        const cfg = loadConfig();
+        const provider = cfg.provider || 'groq';
+        const model    = cfg.model    || 'qwen/qwen3-32b';
+        const sysMsg   = buildSystemPrompt(provider, model, tools);
+        const messages = [sysMsg, ...msgRef.current];
+
+        const stream = await llm.stream(messages, { signal: abortCtrlRef.current.signal });
+        for await (const chunk of stream) {
+            const piece = messageText(chunk);
+            if (piece) {
+                fullText += piece;
+                appendChunk(piece);
+            }
+        }
+        finalizeStreamMsg();
+        if (fullText) {
+            msgRef.current = [...msgRef.current, new AIMessage(fullText)];
+        }
+    } catch (err) {
+        finalizeStreamMsg();
+        if (err?.name === 'AbortError' || /aborted/i.test(err?.message || '')) {
+            setStaticHistory(prev => [...prev, { type: 'assistant', text: t('execution_cancelled_user') }]);
+        } else {
+            if (setLastError) setLastError(err);
+            // Detectar errores típicos de "streaming no soportado"
+            const msg = (err?.message || '').toLowerCase();
+            if (msg.includes('stream') || msg.includes('not supported') || msg.includes('does not support')) {
+                setStaticHistory(prev => [...prev, {
+                    type: 'assistant',
+                    text: `⚠ El proveedor no admite streaming de tokens: ${err.message}\nUsa el modo normal (sin /stream).`
+                }]);
+            } else {
+                setStaticHistory(prev => [...prev, { type: 'assistant', text: `❌ Error en streaming: ${err.message || err}` }]);
+            }
+        }
+    } finally {
+        setStatus('idle'); setActiveTool(null); setThinkStart(null); setElapsed(0);
     }
 }
 

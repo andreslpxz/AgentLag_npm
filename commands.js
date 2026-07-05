@@ -82,6 +82,7 @@ export const SLASH_COMMANDS = [
     { cmd: '/import',      desc: ['cmd_import_desc'] },
     { cmd: '/keybindings', desc: ['cmd_keybindings_desc'] },
     { cmd: '/logout',      desc: ['cmd_logout_desc'] },
+    { cmd: '/marketplace', desc: ['cmd_marketplace_desc'] },
     { cmd: '/memory',      desc: ['cmd_memory_desc'] },
     { cmd: '/model',       desc: ['cmd_model_desc'] },
     { cmd: '/provider',    desc: ['cmd_provider_desc'] },
@@ -92,6 +93,7 @@ export const SLASH_COMMANDS = [
     { cmd: '/sessions',    desc: ['cmd_sessions_desc'] },
     { cmd: '/schedule',    desc: ['cmd_schedule_desc'] },
     { cmd: '/server',      desc: ['cmd_server_desc'] },
+    { cmd: '/stream',      desc: ['cmd_stream_desc'] },
     { cmd: '/bot',         desc: ['cmd_bot_desc'] },
     { cmd: '/discord',     desc: ['cmd_discord_desc'] },
     { cmd: '/plugin',      desc: ['cmd_plugin_desc'] },
@@ -118,12 +120,14 @@ export async function handleSlashCommand(trimmed, ctx) {
         cfg, saveAndExit,
         say, sayBoxed, lastAssistantText, persistFlag, rebuildAgentWith,
         setScreen, setMenuIndex, setFormInput,
-        setStaticHistory, setTotalTokens,
+        setStaticHistory, setStatus, setActiveTool, setTotalTokens,
+        setThinkWord, setThinkStart, setElapsed,
+        abortCtrlRef,
         msgRef, historyRef, currentConversationRef,
         totalTokens, effortLevel, setEffortLevel,
         focusMode, setFocusMode, forceReAct, setForceReAct,
         advisorEnabled, setAdvisorEnabled, setAgent,
-        schedulerRef, lastError,
+        schedulerRef, lastError, setLastError,
     } = ctx;
 
     switch (cmd) {
@@ -1938,6 +1942,37 @@ Por favor:
         }
 
         // ── Plugin system ───────────────────────────────────────────────────
+        // Atajo top-level: /marketplace [query]  →  equivalente a /plugin marketplace [query]
+        case '/marketplace': {
+            const query = args || '';
+            try {
+                const results = query ? await searchMarketplace(query) : await refreshMarketplaceIndex();
+                if (!results || results.length === 0) {
+                    say(query ? `No se encontraron plugins para "${query}".` : 'Marketplace vacio.');
+                    return true;
+                }
+                const lines = [];
+                for (const p of results) {
+                    lines.push({ text: `  ${p.name}  v${p.version}`, color: 'green', bold: true });
+                    lines.push({ text: `    ${p.description}`, color: 'gray' });
+                    const parts = [];
+                    if (p.agents) parts.push(`${p.agents.length} agents`);
+                    if (p.skills) parts.push(`${p.skills.length} skills`);
+                    if (p.mcpServers) parts.push(`${Object.keys(p.mcpServers).length} MCPs`);
+                    if (p.downloads) parts.push(`${p.downloads} downloads`);
+                    lines.push({ text: `    ${parts.join(' / ')}`, color: 'cyan' });
+                    if (p.repository) {
+                        lines.push({ text: `    /plugin add ${p.repository}`, color: 'yellow' });
+                    }
+                    lines.push({ text: '', color: 'gray' });
+                }
+                sayBoxed({ title: query ? `  MARKETPLACE: "${query}"` : '  MARKETPLACE', lines, borderColor: 'magenta', titleColor: 'magenta' });
+            } catch (e) {
+                say(`Error accediendo al marketplace: ${e.message}`);
+            }
+            return true;
+        }
+
         case '/plugin': {
             const sub = args.split(/\s+/)[0]?.toLowerCase() || '';
             const pluginArgs = args.split(/\s+/).slice(1).join(' ');
@@ -2150,6 +2185,25 @@ Por favor:
                     return true;
                 }
             }
+        }
+
+        case '/stream': {
+            // /stream <texto>  →  ejecuta el texto con streaming token-a-token.
+            // Si no hay texto, mostramos uso.
+            if (!args) {
+                say(t('cmd_stream_usage'));
+                return true;
+            }
+            // runStreamTurn está importado abajo para evitar ciclo en módulos.
+            const { runStreamTurn } = await import('./agent_runner.js');
+            // Ejecutar asincronamente — no bloquear el handler.
+            runStreamTurn(args, {
+                cfg, msgRef, historyRef, currentConversationRef,
+                setStaticHistory, setStatus, setActiveTool,
+                setThinkWord, setThinkStart, setElapsed,
+                abortCtrlRef, setLastError,
+            });
+            return true;
         }
 
         default:
