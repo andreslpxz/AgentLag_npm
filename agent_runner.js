@@ -4,9 +4,10 @@ import fs   from 'fs';
 import path from 'path';
 import os   from 'os';
 import { spawn } from 'child_process';
-import { HumanMessage, AIMessage } from '@langchain/core/messages';
+import { HumanMessage, AIMessage, SystemMessage } from '@langchain/core/messages';
 import { buildAgent, stripMarkdown, trySalvageToolCall, messageText, createLLM, loadConfig, buildSystemPrompt } from './agent.js';
 import { tools } from './tools.js';
+import { addToMemory, listMemory } from './memory_utils.js';
 import { RecordingSession } from './recording_logger.js';
 import { analyzeAndEvolve } from './evolution_engine.js';
 import { addEvolution } from './evolution_store.js';
@@ -273,6 +274,124 @@ async function _handleAgentError(err, agent, msgRef, setStaticHistory, setStatus
 // ── Modo stream: tokens uno por uno (LLM directo, sin tools) ──────────────────
 
 /**
+ * Detecta y ejecuta tool calls "alucinados" en texto plano.
+ *
+ * En modo streaming usamos un LLM sin bindTools para garantizar streaming
+ * token-a-token. Pero cuando el agente "quiere" llamar una tool (ej:
+ * manage_memory para guardar el nombre del usuario), no puede — y alucina
+ * el tool call como texto plano: un bloque JSON con name + args, o texto
+ * como "Action: manage_memory Action Input: {...}".
+ *
+ * Esta función detecta esos patrones, ejecuta las tools reales de forma
+ * segura (solo las que están en la whitelist), y devuelve el texto limpio
+ * + los resultados de las tools ejecutadas.
+ *
+ * Whitelist: solo tools seguras y deterministas (manage_memory, read_file,
+ * list_directory, list_skills, read_skill). NO ejecutamos run_shell,
+ * create_file, edit_file, apply_patch, etc. — esas requieren confirmación
+ * del usuario y deben ir por el flujo normal con tools nativas.
+ */
+const SAFE_HALLUCINATED_TOOLS = new Set([
+    'manage_memory', 'read_file', 'list_directory', 'list_skills', 'read_skill',
+]);
+
+function _executeHallucinatedToolCalls(text) {
+    if (!text || typeof text !== 'string') return { cleanedText: text || '', toolResults: [] };
+
+    const toolResults = [];
+    let cleanedText = text;
+
+    // Patrón 1: bloque JSON con { "name": "tool_name", "args": {...} }
+    // o { "name": "tool_name", "parameters": {...} } o { "tool": "...", "input": {...} }
+    // Acepta variants con comillas dobles o sin comillas en las keys.
+    const jsonBlockRegex = /```(?:json)?\s*(\{[\s\S]*?\})\s*```/g;
+    const matches = [...text.matchAll(jsonBlockRegex)];
+
+    for (const match of matches) {
+        const jsonStr = match[1];
+        try {
+            const parsed = JSON.parse(jsonStr);
+            // Normalizar: buscar name/tool/action + args/parameters/input
+            const toolName = parsed.name || parsed.tool || parsed.action || parsed.call;
+            const toolArgs = parsed.args || parsed.parameters || parsed.input || parsed.arguments || {};
+
+            if (toolName && SAFE_HALLUCINATED_TOOLS.has(toolName)) {
+                const result = _runSafeTool(toolName, toolArgs);
+                if (result !== null) {
+                    toolResults.push({ name: toolName, args: toolArgs, output: result });
+                    // Quitar el bloque JSON alucinado del texto.
+                    cleanedText = cleanedText.replace(match[0], '');
+                }
+            }
+        } catch {
+            // No es JSON válido — ignorar.
+        }
+    }
+
+    // Patrón 2: JSON suelto (sin code fence) que parezca un tool call.
+    // Solo lo procesamos si NO encontramos ya en code fences, para evitar
+    // doble ejecución. Buscamos { ... "name": "tool" ... } a nivel de línea.
+    if (toolResults.length === 0) {
+        const looseJsonRegex = /\{\s*"name"\s*:\s*"(\w+)"[\s\S]*?\}/g;
+        const looseMatches = [...text.matchAll(looseJsonRegex)];
+        for (const match of looseMatches) {
+            const toolName = match[1];
+            if (!SAFE_HALLUCINATED_TOOLS.has(toolName)) continue;
+            try {
+                const parsed = JSON.parse(match[0]);
+                const toolArgs = parsed.args || parsed.parameters || parsed.input || parsed.arguments || {};
+                const result = _runSafeTool(toolName, toolArgs);
+                if (result !== null) {
+                    toolResults.push({ name: toolName, args: toolArgs, output: result });
+                    cleanedText = cleanedText.replace(match[0], '');
+                }
+            } catch {}
+        }
+    }
+
+    // Limpiar espacios sobrantes tras quitar los bloques.
+    cleanedText = cleanedText.replace(/\n{3,}/g, '\n\n').trim();
+
+    return { cleanedText, toolResults };
+}
+
+/**
+ * Ejecuta una tool segura con los args dados. Devuelve el output como string,
+ * o null si la tool no es ejecutable / falla.
+ */
+function _runSafeTool(name, args) {
+    try {
+        switch (name) {
+            case 'manage_memory': {
+                const action = args.action;
+                if (action === 'save') {
+                    if (!args.key || args.value === undefined) return null;
+                    addToMemory(args.key, String(args.value), {
+                        project: args.project,
+                        context: args.context,
+                        ttlDays: args.ttlDays,
+                    });
+                    return `✅ Guardado en memoria: "${args.key}".`;
+                }
+                if (action === 'list') {
+                    const mem = listMemory();
+                    return mem ? `🧠 Memoria actual:\n${mem}` : '⚠️ Memoria vacía.';
+                }
+                return null;
+            }
+            // Las demás tools seguras (read_file, list_directory, list_skills,
+            // read_skill) requieren acceso al sistema de tools de LangChain
+            // que no tenemos aquí fácilmente. Por ahora las skippeamos — el
+            // agente debería usar el modo normal (sin /stream) para esas.
+            default:
+                return null;
+        }
+    } catch (e) {
+        return `❌ Error ejecutando ${name}: ${e.message}`;
+    }
+}
+
+/**
  * Ejecuta un turno en modo STREAMING token-a-token.
  *
  * Construye un LLM "pelado" (sin bindTools) para garantizar que el proveedor
@@ -378,7 +497,25 @@ export async function runStreamTurn(msg, ctx) {
         const cfg = loadConfig();
         const provider = cfg.provider || 'groq';
         const model    = cfg.model    || 'qwen/qwen3-32b';
-        const sysMsg   = buildSystemPrompt(provider, model, tools);
+        const baseSys  = buildSystemPrompt(provider, model, tools);
+        // Añadir aviso de modo streaming: el agente NO tiene tools disponibles
+        // en este turno, así que debe responder en lenguaje natural. Si quiere
+        // guardar algo en memoria, puede incluir un bloque JSON con el formato
+        // {"name":"manage_memory","args":{"action":"save","key":"...","value":"..."}}
+        // y el post-procesador lo ejecutará. Para todo lo demás (leer archivos,
+        // ejecutar comandos, etc.), debe pedir al usuario que desactive /stream.
+        const streamSysContent = baseSys.content + `
+
+⚠ MODO STREAMING ACTIVO: En este turno NO tienes acceso a tools. Responde en lenguaje natural, conciso.
+
+EXCEPCIÓN — memoria: Si el usuario te da información que debas recordar (nombre, preferencia, decisión), incluye al final de tu respuesta un bloque JSON con este formato exacto y el post-procesador lo ejecutará:
+
+\`\`\`json
+{"name":"manage_memory","args":{"action":"save","key":"user_name","value":"Harry"}}
+\`\`\`
+
+Para cualquier otra tarea que requiera tools (leer/escribir archivos, ejecutar comandos, buscar), dile al usuario: "Desactiva /stream para esta tarea" y explica brevemente qué harías.`;
+        const sysMsg   = new SystemMessage(streamSysContent);
         const messages = [sysMsg, ...msgRef.current];
 
         const stream = await llm.stream(messages, { signal: abortCtrlRef.current.signal });
@@ -390,6 +527,25 @@ export async function runStreamTurn(msg, ctx) {
             }
         }
         flush(true);  // forzar flush del texto completo al terminar
+
+        // POST-PROCESAMIENTO: el modo streaming usa un LLM sin tools, así que
+        // cuando el agente "quiere" llamar una tool (ej: manage_memory para
+        // guardar el nombre del usuario), no puede — y alucina el tool call
+        // como texto plano (bloque JSON con name/args).
+        // Detectamos esos patrones y ejecutamos las tools reales, luego
+        // limpiamos el texto para que el usuario no vea el JSON alucinado.
+        const { cleanedText, toolResults } = _executeHallucinatedToolCalls(fullText);
+        if (toolResults.length > 0) {
+            // Reemplazamos el texto mostrado con la versión limpia + resumen de tools ejecutadas.
+            fullText = cleanedText;
+            // Mostrar las tools ejecutadas como items de tipo 'tool' en el historial.
+            for (const tr of toolResults) {
+                setStaticHistory(prev => [...prev, {
+                    type: 'tool', name: tr.name, input: tr.args, output: tr.output, running: false,
+                }]);
+            }
+        }
+
         // Stream terminado: mover el texto a staticHistory y limpiar streamingText.
         if (fullText) {
             const cleaned = stripMarkdown(fullText);
