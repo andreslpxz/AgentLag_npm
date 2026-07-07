@@ -168,9 +168,23 @@ export const createFile = tool(
 export const readFile = tool(
   async ({ filePath }) => {
     try {
+      // ── Security: bloquear lectura de archivos de credenciales ────────────
+      // Evita que el agente lea (y potencialmente exfiltre) archivos con
+      // secrets del sistema, incluso si el usuario confirmó run_shell para
+      // ello — read_file tiene su propia verificación.
+      const { checkSensitiveFile } = await import('./security.js');
+      const sensitiveCheck = checkSensitiveFile(filePath);
+      if (sensitiveCheck.blocked) {
+        return `🚫 BLOQUEADO: ${sensitiveCheck.reason}\n\nArchivo: ${filePath}\n\nSi realmente necesitas leer este archivo, hazlo manualmente en tu terminal.`;
+      }
+
       const content = await fs.readFile(filePath, "utf8");
       const lines = content.split("\n").map((line, i) => `${i + 1}: ${line}`).join("\n");
-      return `📄 ${filePath}:\n\n${lines}`;
+      // ── Security: envolver output con marcador anti-injection ──────────────
+      // Si el archivo contiene patrones de prompt injection (SYSTEM:, [INST],
+      // etc.), el wrapper advierte al LLM que trate el contenido como data.
+      const { wrapToolOutput } = await import('./security.js');
+      return wrapToolOutput(`📄 ${filePath}:\n\n${lines}`, 'read_file');
     } catch (error) {
       return `❌ Error al leer archivo: ${error.message}`;
     }
@@ -334,6 +348,17 @@ export const applyPatchTool = tool(
 export const runShell = tool(
   async ({ command, timeoutMs = DEFAULT_SHELL_TIMEOUT_MS }) => {
     try {
+      // ── Security: denylist de comandos destructivos ───────────────────────
+      // Verificamos ANTES de ejecutar. Si el comando matchea un patrón
+      // prohibido, lo rechazamos sin ejecutar — incluso si el usuario
+      // confirmó. Hay operaciones que un agente autónomo no debería
+      // poder hacer nunca, sin importar el contexto.
+      const { checkShellDenylist } = await import('./security.js');
+      const denyResult = checkShellDenylist(command);
+      if (denyResult.blocked) {
+        return `🚫 BLOQUEADO por política de seguridad: ${denyResult.reason}\n\nCategoría: ${denyResult.category}\nComando: ${command.slice(0, 100)}${command.length > 100 ? '…' : ''}\n\nSi crees que es un falso positivo, ejecuta el comando manualmente en tu terminal.`;
+      }
+
       const opts = { timeout: clampTimeout(timeoutMs) };
       const { stdout, stderr } = await execPromise(command, opts);
       let output = "";
@@ -360,6 +385,16 @@ export const runShell = tool(
 export const webSearch = tool(
   async ({ query }) => {
     try {
+      // ── Security: detectar secrets en la query antes de enviar a la red ──
+      // Evita que el agente exfiltre accidentalmente API keys/tokens al
+      // incluirlos en una búsqueda web.
+      const { detectSecrets } = await import('./security.js');
+      const secretCheck = detectSecrets(query);
+      if (secretCheck.found) {
+        const names = secretCheck.secrets.map(s => s.name).join(', ');
+        return `🚫 BLOQUEADO: la query contiene posibles secrets (${names}). No se enviará a la red.\n\nQuery: ${query.slice(0, 80)}${query.length > 80 ? '…' : ''}\n\nSi es un falso positivo, reformula la query sin incluir el token.`;
+      }
+
       const apiKey = process.env.TAVILY_API_KEY;
       if (!apiKey) return await fallbackWebSearch(query);
 
