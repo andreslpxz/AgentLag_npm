@@ -1,0 +1,125 @@
+{
+  "name": "autonomous-ops",
+  "version": "1.0.0",
+  "description": "Agentes autónomos para revenue operations (SDR), cobranza/dunning y DevOps incident response. Incluye 3 agentes, 3 skills y 12 servidores MCP.",
+  "author": "agentlag-community",
+  "license": "MIT",
+  "homepage": "https://github.com/andreslpxz/AgentLag_npm",
+  "agents": [
+    {
+      "name": "sdr-autonomo",
+      "description": "SDR autónomo: prospección, personalización, follow-up y booking de reuniones",
+      "file": "agents/sdr-autonomo.json"
+    },
+    {
+      "name": "cobranza-dunning",
+      "description": "Agente de cobranza y dunning: recuperación de pagos y reducción de churn",
+      "file": "agents/cobranza-dunning.json"
+    },
+    {
+      "name": "devops-incident-response",
+      "description": "DevOps / incident response: triage, contención, diagnóstico y PRs de fix",
+      "file": "agents/devops-incident-response.json"
+    }
+  ],
+  "skills": [
+    {
+      "name": "outbound-prospecting",
+      "description": "Playbooks de prospección outbound: investigación de ICP, copy personalizado y cadencias multi-canal",
+      "file": "skills/outbound-prospecting/SKILL.md"
+    },
+    {
+      "name": "dunning-playbooks",
+      "description": "Secuencias de dunning por severidad, reglas de reintento y scripts de retención",
+      "file": "skills/dunning-playbooks/SKILL.md"
+    },
+    {
+      "name": "incident-response",
+      "description": "Runbooks de incident response: severidades, roles, contención y postmortem",
+      "file": "skills/incident-response/SKILL.md"
+    }
+  ],
+  "mcpServers": {
+    "firecrawl": {
+      "command": "npx",
+      "args": ["-y", "firecrawl-mcp"],
+      "env": {
+        "FIRECRAWL_API_KEY": "REEMPLAZAR_CON_FIRECRAWL_API_KEY"
+      }
+    },
+    "crm": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-hubspot"],
+      "env": {
+        "HUBSPOT_API_KEY": "REEMPLAZAR_CON_HUBSPOT_API_KEY"
+      }
+    },
+    "gmail": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-gmail"],
+      "env": {
+        "GMAIL_CREDENTIALS_PATH": "/home/REEMPLAZA_USER/.agentlag/credentials/gmail.json"
+      }
+    },
+    "calendar": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-google-calendar"],
+      "env": {
+        "GOOGLE_CREDENTIALS_PATH": "/home/REEMPLAZA_USER/.agentlag/credentials/google.json"
+      }
+    },
+    "slack": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-slack"],
+      "env": {
+        "SLACK_BOT_TOKEN": "REEMPLAZAR_CON_SLACK_BOT_TOKEN"
+      }
+    },
+    "stripe": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-stripe"],
+      "env": {
+        "STRIPE_SECRET_KEY": "REEMPLAZAR_CON_STRIPE_SECRET_KEY"
+      }
+    },
+    "postgres": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-postgres", "postgresql://USER:PASS@HOST:5432/DB"]
+    },
+    "github": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-github"],
+      "env": {
+        "GITHUB_PERSONAL_ACCESS_TOKEN": "REEMPLAZAR_CON_GITHUB_PAT"
+      }
+    },
+    "observability": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-datadog"],
+      "env": {
+        "DATADOG_API_KEY": "REEMPLAZAR_CON_DATADOG_API_KEY",
+        "DATADOG_APP_KEY": "REEMPLAZAR_CON_DATADOG_APP_KEY"
+      }
+    },
+    "filesystem": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "/tmp/agentlag-workspace"]
+    },
+    "twilio": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-twilio"],
+      "env": {
+        "TWILIO_ACCOUNT_SID": "REEMPLAZAR_CON_TWILIO_SID",
+        "TWILIO_AUTH_TOKEN": "REEMPLAZAR_CON_TWILIO_TOKEN",
+        "TWILIO_FROM_NUMBER": "REEMPLAZAR_CON_TWILIO_FROM_NUMBER"
+      }
+    },
+    "kubernetes": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-kubernetes"],
+      "env": {
+        "KUBECONFIG": "/home/REEMPLAZA_USER/.kube/config"
+      }
+    }
+  }
+}

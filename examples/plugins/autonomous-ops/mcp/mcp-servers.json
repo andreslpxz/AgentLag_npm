@@ -1,0 +1,129 @@
+{
+  "mcpServers": {
+    "firecrawl": {
+      "command": "npx",
+      "args": ["-y", "firecrawl-mcp"],
+      "env": {
+        "FIRECRAWL_API_KEY": "REEMPLAZAR_CON_FIRECRAWL_API_KEY"
+      },
+      "_usage": "SDR autónomo — investigación de leads, scraping de company sites, detección de trigger events",
+      "_docs": "https://github.com/mendableai/firecrawl-mcp",
+      "_env_help": "Obtén tu API key en https://firecrawl.dev"
+    },
+    "crm": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-hubspot"],
+      "env": {
+        "HUBSPOT_API_KEY": "REEMPLAZAR_CON_HUBSPOT_API_KEY"
+      },
+      "_usage": "SDR + Cobranza — gestión de contacts, companies, deals, activities",
+      "_docs": "https://github.com/modelcontextprotocol/servers",
+      "_env_help": "Crea una Private App en HubSpot Settings > Integrations > Private Apps",
+      "_alternatives": "Para Salesforce: usa @modelcontextprotocol/server-salesforce (community) o mcp-server-salesforce"
+    },
+    "gmail": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-gmail"],
+      "env": {
+        "GMAIL_CREDENTIALS_PATH": "/home/REEMPLAZA_USER/.agentlag/credentials/gmail.json"
+      },
+      "_usage": "SDR + Cobranza — envío de outreach y emails de dunning",
+      "_docs": "https://github.com/modelcontextprotocol/servers",
+      "_env_help": "Requiere OAuth credentials de Google Cloud Console (Gmail API enabled)"
+    },
+    "calendar": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-google-calendar"],
+      "env": {
+        "GOOGLE_CREDENTIALS_PATH": "/home/REEMPLAZA_USER/.agentlag/credentials/google.json"
+      },
+      "_usage": "SDR — consulta disponibilidad y agenda reuniones con prospects",
+      "_docs": "https://github.com/modelcontextprotocol/servers",
+      "_env_help": "Requiere OAuth credentials de Google Cloud Console (Calendar API enabled)"
+    },
+    "slack": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-slack"],
+      "env": {
+        "SLACK_BOT_TOKEN": "REEMPLAZAR_CON_SLACK_BOT_TOKEN"
+      },
+      "_usage": "Todos los agentes — notificaciones, coordinación y comunicación de incidentes",
+      "_docs": "https://github.com/modelcontextprotocol/servers/tree/main/src/slack",
+      "_env_help": "Crea un Slack App en https://api.slack.com/apps, agrega bot token scopes (chat:write, channels:read, etc.) e instala en tu workspace"
+    },
+    "stripe": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-stripe"],
+      "env": {
+        "STRIPE_SECRET_KEY": "REEMPLAZAR_CON_STRIPE_SECRET_KEY"
+      },
+      "_usage": "Cobranza — consulta invoices, gestiona reintentos, actualiza payment methods",
+      "_docs": "https://github.com/modelcontextprotocol/servers",
+      "_env_help": "Obtén tu secret key en Stripe Dashboard > Developers > API keys"
+    },
+    "postgres": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-postgres", "postgresql://USER:PASS@HOST:5432/DB"],
+      "_usage": "Cobranza + DevOps — estado de uso de customers (churn detection) y diagnóstico de data issues",
+      "_docs": "https://github.com/modelcontextprotocol/servers/tree/main/src/postgres",
+      "_env_help": "Reemplaza la connection string con tu DATABASE_URL. Usa read-only user para seguridad."
+    },
+    "github": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-github"],
+      "env": {
+        "GITHUB_PERSONAL_ACCESS_TOKEN": "REEMPLAZAR_CON_GITHUB_PAT"
+      },
+      "_usage": "DevOps — lectura de código, branches, PRs y issues para incident response",
+      "_docs": "https://github.com/modelcontextprotocol/servers/tree/main/src/github",
+      "_env_help": "Crea un PAT en GitHub Settings > Developer settings > Personal access tokens con scopes: repo, read:org, workflow"
+    },
+    "observability": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-datadog"],
+      "env": {
+        "DATADOG_API_KEY": "REEMPLAZAR_CON_DATADOG_API_KEY",
+        "DATADOG_APP_KEY": "REEMPLAZAR_CON_DATADOG_APP_KEY"
+      },
+      "_usage": "DevOps — métricas, logs y traces para triage y diagnóstico de incidentes",
+      "_docs": "https://github.com/modelcontextprotocol/servers",
+      "_env_help": "Obtén API y App keys en Datadog > Integrations > APIs",
+      "_alternatives": "Para AWS CloudWatch: usa @modelcontextprotocol/server-cloudwatch o un wrapper community"
+    },
+    "filesystem": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "/tmp/agentlag-workspace"],
+      "_usage": "DevOps — edición de código, runbooks y archivos de config en workspace local",
+      "_docs": "https://github.com/modelcontextprotocol/servers/tree/main/src/filesystem",
+      "_env_help": "Cambia /tmp/agentlag-workspace por el path donde quieras que el agente pueda leer/escribir"
+    },
+    "twilio": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-twilio"],
+      "env": {
+        "TWILIO_ACCOUNT_SID": "REEMPLAZAR_CON_TWILIO_SID",
+        "TWILIO_AUTH_TOKEN": "REEMPLAZAR_CON_TWILIO_TOKEN",
+        "TWILIO_FROM_NUMBER": "REEMPLAZAR_CON_TWILIO_FROM_NUMBER"
+      },
+      "_usage": "Cobranza (opcional) — SMS para dunning crítico cuando no hay respuesta por email",
+      "_docs": "https://github.com/modelcontextprotocol/servers",
+      "_env_help": "Obtén SID, token y número en Twilio Console",
+      "_optional": true
+    },
+    "kubernetes": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-kubernetes"],
+      "env": {
+        "KUBECONFIG": "/home/REEMPLAZA_USER/.kube/config"
+      },
+      "_usage": "DevOps (opcional) — inspección y reinicio de pods/deployments para contención",
+      "_docs": "https://github.com/modelcontextprotocol/servers",
+      "_env_help": "Asegúrate que tu KUBECONFIG apunte al cluster correcto y que el contexto tenga permisos read + restart",
+      "_optional": true
+    }
+  },
+  "_meta": {
+    "description": "Referencia canónica de servidores MCP para el plugin autonomous-ops. Este archivo usa la estructura { mcpServers: {...} } que mcp_utils.js carga correctamente. Úsalo con scripts/install-mcp.js para registrar los servers en ~/.agentlag/mcp.json.",
+    "format_note": "Las propiedades que empiezan con _ son metadata humana y son ignoradas por mcp_utils.js (que solo lee command/args/env/url/type). Si tu MCP client es estricto, elimina las propiedades _ antes de usar."
+  }
+}
