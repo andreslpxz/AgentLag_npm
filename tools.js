@@ -1,6 +1,7 @@
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
 import fs from "fs/promises";
+import fsSync from "fs";
 import { exec, spawn } from "child_process";
 import path from "path";
 import { promisify } from "util";
@@ -9,6 +10,7 @@ import { fileURLToPath } from "url";
 import os from "os";
 import { formatSkillsIndex, readSkill } from "./skills.js";
 import { addToMemory, listMemory } from "./memory_utils.js";
+import { AGENTS_DIR } from "./session.js";
 
 // Cargar .env desde el directorio del proyecto
 import { executeSubagents } from "./agent.js";
@@ -710,4 +712,180 @@ export const deepSearch = tool(
   }
 );
 
-export const tools = [createFile, readFile, editFile, listDirectory, searchInFiles, showDiff, applyPatchTool, runShell, webSearch, listSkills, readSkillTool, findSkills, addSkill, manageMemory, verImage, queryGraph, delegateToSubagents, deepSearch];
+// ─────────────────────────────────────────────
+// HERRAMIENTA: LISTAR SUBAGENTES DISPONIBLES
+// ─────────────────────────────────────────────
+// Lee el directorio ~/.agentlag/agents/ y devuelve la lista de subagentes
+// instalados (tanto globales como los aportados por plugins, que se guardan
+// con prefijo "pluginName__agentName.json"). Devuelve nombre, descripción,
+// provider, model y origen (user vs plugin) para que el modelo sepa a quién
+// puede delegar con delegate_to_subagents.
+export const listSubagents = tool(
+  async () => {
+    try {
+      if (!fsSync.existsSync(AGENTS_DIR)) {
+        return "📭 No hay subagentes instalados. El directorio ~/.agentlag/agents/ no existe todavía.\n\nLos subagentes se crean automáticamente al instalar un plugin (`agentlag plugin install <source>`) o copiando manualmente un .json en ~/.agentlag/agents/.";
+      }
+
+      const entries = await fs.readdir(AGENTS_DIR);
+      const jsonFiles = entries.filter(f => f.endsWith('.json'));
+
+      if (jsonFiles.length === 0) {
+        return "📭 No hay subagentes instalados en ~/.agentlag/agents/.";
+      }
+
+      const agents = [];
+      for (const file of jsonFiles.sort()) {
+        const fullPath = path.join(AGENTS_DIR, file);
+        try {
+          const raw = await fs.readFile(fullPath, 'utf8');
+          const def = JSON.parse(raw);
+          const baseName = path.basename(file, '.json');
+          const prefixMatch = baseName.match(/^(.+)__(.+)$/);
+          const source = prefixMatch ? 'plugin' : 'user';
+          const pluginName = prefixMatch ? prefixMatch[1] : null;
+          const agentName = prefixMatch ? prefixMatch[2] : baseName;
+          agents.push({
+            name: agentName,
+            fullName: baseName,
+            source,
+            plugin: pluginName,
+            description: def.description || '(sin descripción)',
+            provider: def.provider || '(no definido)',
+            model: def.model || '(no definido)',
+            hasSystemPrompt: !!def.systemPrompt,
+            allowedTools: Array.isArray(def.allowedTools) ? def.allowedTools : null,
+          });
+        } catch {
+          agents.push({
+            name: path.basename(file, '.json'),
+            fullName: path.basename(file, '.json'),
+            source: 'unknown',
+            plugin: null,
+            description: `(❌ error parseando ${file})`,
+            provider: '-',
+            model: '-',
+            hasSystemPrompt: false,
+            allowedTools: null,
+          });
+        }
+      }
+
+      const lines = [`🤖 Subagentes disponibles (${agents.length}):`, ''];
+      for (const a of agents) {
+        const srcTag = a.source === 'plugin' ? `[plugin: ${a.plugin}]` : '[user]';
+        const toolsTag = a.allowedTools
+          ? ` · tools: ${a.allowedTools.length} (${a.allowedTools.slice(0, 3).join(', ')}${a.allowedTools.length > 3 ? '…' : ''})`
+          : ' · tools: todas (hereda)';
+        lines.push(`• ${a.fullName} ${srcTag}`);
+        lines.push(`    desc: ${a.description}`);
+        lines.push(`    provider: ${a.provider} · model: ${a.model}${toolsTag}`);
+        lines.push('');
+      }
+      lines.push('💡 Para delegar tareas a uno o más de estos subagentes, usa delegate_to_subagents con el campo "name" igual al "fullName" mostrado arriba.');
+      lines.push('💡 Para ver el systemPrompt completo o los detalles de un subagente, usa read_subagent.');
+
+      return lines.join('\n');
+    } catch (error) {
+      return `❌ Error al listar subagentes: ${error.message}`;
+    }
+  },
+  {
+    name: "list_subagents",
+    description: "Lista todos los subagentes instalados en ~/.agentlag/agents/ (incluyendo los aportados por plugins). Devuelve nombre, descripción, provider, model y origen de cada uno. Úsala ANTES de delegate_to_subagents para saber a quién puedes delegar, o cuando el usuario pregunte qué subagentes hay disponibles.",
+    schema: z.object({}),
+  }
+);
+
+// ─────────────────────────────────────────────
+// HERRAMIENTA: LEER DEFINICIÓN DE UN SUBAGENTE
+// ─────────────────────────────────────────────
+// Devuelve el JSON completo de un subagente (systemPrompt, allowedTools, etc.)
+// para que el modelo pueda inspeccionar su comportamiento antes de delegarle
+// una tarea o para explicarle al usuario qué hace un subagente concreto.
+export const readSubagent = tool(
+  async ({ name }) => {
+    try {
+      if (!name || typeof name !== 'string') {
+        return "❌ Debes especificar el nombre del subagente. Usa list_subagents para ver los disponibles.";
+      }
+
+      if (!fsSync.existsSync(AGENTS_DIR)) {
+        return `❌ El directorio ~/.agentlag/agents/ no existe. No hay subagentes instalados.`;
+      }
+
+      // Buscar el archivo: probar primero el nombre tal cual, luego con sufijo .json,
+      // luego buscamos cualquier .json cuyo basename (con o sin prefijo de plugin) coincida.
+      const candidates = [
+        path.join(AGENTS_DIR, name.endsWith('.json') ? name : `${name}.json`),
+      ];
+
+      // Si el nombre no incluye el prefijo "plugin__", buscar también coincidencias
+      // por sufijo para que `read_subagent code-reviewer` encuentre
+      // `dev-toolkit__code-reviewer.json` si existe.
+      if (!name.includes('__')) {
+        const entries = await fs.readdir(AGENTS_DIR);
+        for (const f of entries) {
+          if (!f.endsWith('.json')) continue;
+          const base = path.basename(f, '.json');
+          if (base === name || base.endsWith(`__${name}`)) {
+            candidates.push(path.join(AGENTS_DIR, f));
+          }
+        }
+      }
+
+      let filePath = null;
+      for (const c of candidates) {
+        try {
+          await fs.access(c);
+          filePath = c;
+          break;
+        } catch { /* try next */ }
+      }
+
+      if (!filePath) {
+        return `❌ Subagente "${name}" no encontrado en ~/.agentlag/agents/.\n\nUsa list_subagents para ver los disponibles.`;
+      }
+
+      const raw = await fs.readFile(filePath, 'utf8');
+      let def;
+      try {
+        def = JSON.parse(raw);
+      } catch (e) {
+        return `❌ El archivo ${path.basename(filePath)} no es JSON válido: ${e.message}`;
+      }
+
+      const baseName = path.basename(filePath, '.json');
+      const prefixMatch = baseName.match(/^(.+)__(.+)$/);
+      const source = prefixMatch ? 'plugin' : 'user';
+      const pluginName = prefixMatch ? prefixMatch[1] : null;
+
+      const lines = [`📄 Subagente: ${baseName}`, ''];
+      lines.push(`source: ${source}${pluginName ? ` (plugin: ${pluginName})` : ''}`);
+      lines.push(`provider: ${def.provider || '(no definido)'}`);
+      lines.push(`model: ${def.model || '(no definido)'}`);
+      lines.push(`description: ${def.description || '(sin descripción)'}`);
+      if (Array.isArray(def.allowedTools)) {
+        lines.push(`allowedTools (${def.allowedTools.length}): ${def.allowedTools.join(', ') || '(empty)'}`);
+      } else {
+        lines.push(`allowedTools: null (hereda todas las herramientas nativas + MCP)`);
+      }
+      lines.push('');
+      lines.push('--- systemPrompt ---');
+      lines.push(def.systemPrompt || '(sin systemPrompt definido)');
+
+      return lines.join('\n');
+    } catch (error) {
+      return `❌ Error al leer subagente: ${error.message}`;
+    }
+  },
+  {
+    name: "read_subagent",
+    description: "Lee y devuelve la definición completa de un subagente (systemPrompt, provider, model, allowedTools). Úsala para inspeccionar qué hace un subagente antes de delegarle una tarea, o cuando el usuario pregunte por el comportamiento o capacidades de un subagente concreto. Acepta el nombre corto (ej: 'code-reviewer') o el fullName con prefijo de plugin (ej: 'dev-toolkit__code-reviewer').",
+    schema: z.object({
+      name: z.string().describe("Nombre del subagente a inspeccionar. Puede ser el nombre corto (ej: 'code-reviewer') o el fullName (ej: 'dev-toolkit__code-reviewer'). Usa list_subagents para ver los nombres disponibles."),
+    }),
+  }
+);
+
+export const tools = [createFile, readFile, editFile, listDirectory, searchInFiles, showDiff, applyPatchTool, runShell, webSearch, listSkills, readSkillTool, findSkills, addSkill, manageMemory, verImage, queryGraph, delegateToSubagents, listSubagents, readSubagent, deepSearch];
