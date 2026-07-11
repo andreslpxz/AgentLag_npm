@@ -209,7 +209,10 @@ export function detectSecrets(text) {
 //    añadir una advertencia explícita.
 
 const INJECTION_PATTERNS = [
-    /\b(?:SYSTEM|sys)\s*:/i,
+    // "SYSTEM:" — uppercase only. The previous /\b(?:SYSTEM|sys)\s*:/i
+    // matched "sys:" in legitimate technical content (Python sys module,
+    // syslog entries, notes), causing false positives in tool outputs.
+    /\bSYSTEM\s*:/,
     /\bignore\s+(?:all\s+)?previous\s+instructions?\b/i,
     /\bignore\s+(?:the\s+)?above\b/i,
     /\bdisregard\s+(?:all\s+)?previous\b/i,
