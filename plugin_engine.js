@@ -103,10 +103,35 @@ function validateManifest(manifest) {
 }
 
 /**
- * Read and merge the existing mcp.json, then write it back.
+ * Read the MCP config from ~/.agentlag/mcp.json.
+ *
+ * Ensures the returned object always has a `mcpServers` wrapper (the
+ * structure that mcp_utils.js loads). Also performs a one-time migration:
+ * if the file has MCP server definitions at the top level (a bug in
+ * previous versions of this file that wrote keys outside the wrapper),
+ * they are moved into `mcpServers` so they actually get loaded.
+ *
+ * The migration is idempotent and only persists when another function
+ * (install/uninstall) writes the config back.
  */
 function readMcpConfig() {
-  return readJson(MCP_FILE, {});
+  const raw = readJson(MCP_FILE, {});
+  if (!raw || typeof raw !== 'object') return { mcpServers: {} };
+  if (!raw.mcpServers || typeof raw.mcpServers !== 'object') {
+    raw.mcpServers = {};
+  }
+  // Migration: move top-level keys that look like MCP server configs
+  // (have `command` or `url`) into the `mcpServers` wrapper.
+  for (const [key, value] of Object.entries(raw)) {
+    if (key === 'mcpServers') continue;
+    if (value && typeof value === 'object' && (value.command || value.url)) {
+      if (!raw.mcpServers[key]) {
+        raw.mcpServers[key] = value;
+      }
+      delete raw[key];
+    }
+  }
+  return raw;
 }
 
 function writeMcpConfig(config) {
@@ -196,12 +221,28 @@ export async function installPlugin(source, { ctx } = {}) {
     }
 
     // ── 6. Merge MCP servers ───────────────────────────────────────────────
-    const mcpServers = manifest.mcpServers || {};
+    // manifest.mcpServers can be either an object { name: {command,args,env} }
+    // or an array [ {name, ...} ]. Normalize to object form, then merge into
+    // ~/.agentlag/mcp.json inside the `mcpServers` wrapper (the structure
+    // that mcp_utils.js loads).
+    let mcpServers = manifest.mcpServers || {};
+    if (Array.isArray(mcpServers)) {
+      // Some manifests (e.g. dev-toolkit) use array form:
+      // [{ name, command, args, env }, ...]. Normalize to object form.
+      const obj = {};
+      for (const s of mcpServers) {
+        if (s && s.name) {
+          const { name, ...rest } = s;
+          obj[name] = rest;
+        }
+      }
+      mcpServers = obj;
+    }
     if (Object.keys(mcpServers).length > 0) {
       const mcpConfig = readMcpConfig();
       for (const [serverName, serverConfig] of Object.entries(mcpServers)) {
         const key = `${pluginName}__${serverName}`;
-        mcpConfig[key] = serverConfig;
+        mcpConfig.mcpServers[key] = serverConfig;
       }
       writeMcpConfig(mcpConfig);
     }
@@ -278,9 +319,9 @@ export async function uninstallPlugin(name, { ctx } = {}) {
     // ── 2. Remove MCP servers with the plugin prefix ───────────────────────
     const mcpConfig = readMcpConfig();
     let mcpChanged = false;
-    for (const key of Object.keys(mcpConfig)) {
+    for (const key of Object.keys(mcpConfig.mcpServers)) {
       if (key.startsWith(prefix)) {
-        delete mcpConfig[key];
+        delete mcpConfig.mcpServers[key];
         mcpChanged = true;
       }
     }
@@ -415,7 +456,7 @@ export function getPluginMcpServers(name) {
   const prefix = `${name}__`;
   const result = {};
 
-  for (const [key, config] of Object.entries(mcpConfig)) {
+  for (const [key, config] of Object.entries(mcpConfig.mcpServers)) {
     if (key.startsWith(prefix)) {
       result[key] = config;
     }
